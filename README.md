@@ -241,3 +241,31 @@ Prioritize:
 - DummyProvider default
 - OpenAI-compatible External provider using baseUrl/apiKey/model settings
 - Generate runtest.sh and runtest.ps1 after core implementation
+
+---
+
+## Local Run/Test
+
+Local dev:
+
+```bash
+npm install
+npm run dev
+```
+
+Build + preview:
+
+```bash
+npm run build
+npm run preview
+```
+
+Automated scripts:
+
+```bash
+./runtest.sh
+```
+
+```powershell
+./runtest.ps1
+```
