@@ -1,271 +1,383 @@
-# GPTree v0.2.0 — Standalone Static Web Demo (Vite) + BYOK OpenAI-Compatible Provider
-## Project Plan for Codex (Authoritative)
+# GPTree v0.2.1 — Standalone Static Web Demo (Vite)
+## Tree of Questions (Commit-like Nodes) + Explicit Prompt Assembly (Authoritative)
 
 ---
 
-## Goal
+## Version Context
 
-Build a standalone static web app (Vite) that demonstrates GPTree UX:
+- v0.2.0 (previous): standalone IDE-like UI (tree left, chat right), quote creates branch node, local persistence, export/import, provider abstraction.
+- v0.2.1 (this spec): fixes conceptual gaps:
+  1) AI must always understand “what node am I in and why?”
+  2) Tree must show meaningful units (questions/commits), not only “root/branch”.
 
-- Left pane: tree (VS Code-like)
-- Right pane: chat for the active node
-- Selecting text in transcript can create a child branch node
-- Node navigation via tree
-- Merge actions (inline vs link) as UX-level actions
-- Local persistence + export/import JSON
-- Works out-of-the-box with DummyProvider
-- Supports BYOK API via an OpenAI-compatible endpoint (ModelScope base_url)
-
-No browser extension. No ChatGPT DOM automation.
+This document defines **GPTree v0.2.1** and supersedes prior v0.2.0 drafts for implementation.
 
 ---
 
-## Environment Requirements (Developer)
+## Core Goal
 
-- Node.js (LTS) + npm
-- No Python required
-- Local run:
-  - npm install
-  - npm run dev
-  - npm run build && npm run preview
+Build a static website that provides an IDE-like “reasoning workspace”:
 
-Codex must generate `runtest.sh` and `runtest.ps1` to validate build + preview.
+- Left: a tree map of **questions** (like commits in git tree)
+- Right: the active question’s conversation
+- Quoting any text creates a **child question node** (a new “commit”)
+- Merge actions mark whether a child question is consolidated back into its parent (inline or link)
+- AI behavior is stable because every request includes:
+  - workspace-level system prompt
+  - node-level context block (why this node exists)
+  - node-local messages
+
+Provider-specific details are intentionally abstracted. Default provider must never block the demo.
 
 ---
 
 ## Non-Goals
 
-- No auth/accounts/quotas
-- No security hardening (demo)
-- No collaboration
-- No perfect text surgery merging (merge can be status + references + optional best-effort summarization)
+- No browser extension
+- No ChatGPT web DOM automation
+- No multi-user collaboration
+- No auth/quotas/security hardening (demo)
+- No perfect document rewriting required (merge can be metadata + parent notes)
 
 ---
 
-## UX Requirements
+## Environment Requirements
 
-### Layout
-- Left sidebar: TreeView
-  - expand/collapse
-  - active highlight
-  - status badges: draft/open/linked/merged
-- Main pane: ChatPane
-  - header: node title + breadcrumb
-  - quote context card for branch nodes (collapsed optional)
-  - transcript (user/assistant)
-  - composer + Send
-  - quote-to-branch action:
-    - user selects text in transcript
-    - click “Create Branch from Quote”
-    - new child node created and focused
+- Node.js LTS (18+)
+- npm
+- Local run:
+  - npm install
+  - npm run dev
+  - npm run build && npm run preview
+- Codex must generate runtest scripts (see Run/Test Automation).
+
+---
+
+## Key Conceptual Model
+
+### Node = Question (Commit)
+A node represents a **single user question/issue**. It is the primary unit shown in the tree.
+
+- The tree’s “commit message” is the node’s **primaryQuestion** (or title derived from it).
+- A node may contain short back-and-forth, but it must always have a clear question anchor.
+
+### Branching
+A branch occurs when a user selects text (quote) and opens a new child question.
+
+- Child node stores the quote and the relationship to the parent.
+- Child node title is derived from the child’s primary question (when asked).
 
 ### Merge
-Provide two buttons:
-- Merge Inline: mark merged; append a “merge note” to parent (optional AI-generated summary)
-- Merge as Link: mark linked; insert parent reference item that jumps to child node
+Merging is a relationship back to the parent:
 
-### Settings
-Add a Settings modal/panel:
-- Provider mode: Dummy | External (OpenAI-compatible)
-- External settings (BYOK):
-  - baseUrl (default: https://api-inference.modelscope.cn/v1)
-  - apiKey (user input)
-  - model (default example: deepseek-ai/DeepSeek-R1-Distill-Qwen-32B)
-  - stream (boolean; default true)
-  - maxTokens (default small e.g. 512)
-  - temperature (optional)
-- Buttons:
-  - Save
-  - Test Connection (send minimal request; show success/error)
-  - Forget Key (clears apiKey)
-
-Rules:
-- Store settings locally only
-- Never export apiKey in workspace JSON
+- Merge Inline: the child’s resolution is written back into the parent as a “merge note” (and optionally a best-effort rewrite later).
+- Merge as Link: parent retains a navigable reference to the child.
 
 ---
 
-## Data Model
+## Data Model (Required)
 
 Workspace:
-- workspaceId, createdAt, updatedAt
-- rootNodeId
+- workspaceId: string
+- createdAt: timestamp
+- updatedAt: timestamp
+- rootNodeId: string
 - nodes: Record<nodeId, Node>
-- ui: { activeNodeId, expandedNodeIds }
+- ui:
+  - activeNodeId: string
+  - expandedNodeIds: string[]
+- settings:
+  - systemPrompt: string
+  - providerMode: "dummy" | "external"
+  - providerConfig: object (provider-specific, stored locally only; never exported)
 
 Node:
-- id, parentId, childrenIds
-- title, status: draft|open|linked|merged
-- anchor (optional): { sourceNodeId, quoteText }
+- id: string
+- parentId: string | null
+- childrenIds: string[]
+- createdAt: timestamp
+- updatedAt: timestamp
+
+Question identity:
+- primaryQuestion: string | null
+- title: string
+  - default: "Untitled question" until primaryQuestion exists
+  - once primaryQuestion exists: title = truncated primaryQuestion
+
+Branch origin (optional):
+- anchor: null | {
+    sourceNodeId: string
+    quoteText: string
+    sourceMessageId: string | null
+    sourceMessageRole: "user" | "assistant" | null
+  }
+
+Status & merge:
+- status: "open" | "linked" | "merged"
+- merge: null | {
+    mode: "inline" | "link"
+    targetNodeId: string
+    note: string
+    mergedAt: timestamp
+  }
+
+Messages:
 - messages: Message[]
-- merge (optional): { mode: inline|link, note, targetNodeId }
-- createdAt, updatedAt
 
 Message:
-- id
-- role: user|assistant|system
-- text
-- ts
+- id: string
+- role: "user" | "assistant" | "system"
+- text: string
+- ts: timestamp
+
+Parent references (for merge-as-link UX):
+- references: Array<{
+    label: string
+    targetNodeId: string
+  }>
+
+---
+
+## Persistence and Export/Import
+
+Local persistence:
+- Use localStorage for simplicity (IndexedDB optional).
+- Auto-save workspace on every change.
+
+Export workspace:
+- Download JSON containing workspace + nodes.
+- Must exclude provider secrets:
+  - settings.providerConfig.apiKey (or equivalent) must not be exported.
+
+Import workspace:
+- Load JSON and replace current workspace.
+
+---
+
+## UI Requirements
+
+### Layout
+Single-page app.
+
+Left Sidebar: Tree Map
+- Displays node hierarchy with expand/collapse.
+- Each node label must be the question title (not “root/branch”).
+- Visual cues:
+  - status badge: OPEN / LINKED / MERGED
+  - anchor indicator (small icon or marker) if node originated from quote
+  - merge indicator if node has merge metadata
+- Clicking a node makes it active.
+
+Right Pane: Active Node Workspace
+Header:
+- title (editable optional)
+- breadcrumb (Root → … → active)
+- controls:
+  - New Child Question (optional)
+  - Merge Inline
+  - Merge as Link
+  - Export / Import (can be global toolbar instead)
+
+Context block (always present, but compact):
+- If node has anchor.quoteText:
+  - show Quote Card (collapsed by default is acceptable)
+  - show “From: parent node” link
+- Show node status
+
+Transcript:
+- message list for this node only
+
+Composer:
+- textarea + Send
+- Send triggers provider response (dummy/external)
+
+Quote-to-branch interaction:
+- user selects text in transcript
+- button: “Create Question from Quote”
+- creates child node with:
+  - parentId = current node id
+  - anchor.quoteText = selected text
+  - status = open
+- switch active node to the new child immediately
+- in the child, the Quote Card shows selected text
+
+---
+
+## Prompt Assembly (Critical)
+
+AI must never guess context. Every model call is assembled from:
+
+1) Workspace system prompt (workspace.settings.systemPrompt)
+2) Node context block (generated each call from node fields)
+3) Node-local messages (recent N)
+
+### Storage rule
+- Store the system prompt in workspace settings.
+- Store node context as structured fields (primaryQuestion, anchor, breadcrumb).
+- Do not store a single monolithic “prompt string” in the node; assemble deterministically.
+
+### Default system prompt (required)
+Provide a default system prompt in settings. Example (plain text):
+
+  You are an assistant helping the user resolve a specific question inside a tree-structured workspace.
+  Stay within the active node’s context and quoted span if provided.
+  Be concise and precise. If clarification is needed, ask at most one targeted question.
+
+### Node context block (generated each call)
+Generate a compact context block. Example (plain text):
+
+  Node:
+  - Title: {node.title}
+  - Path: {breadcrumb}
+  - Status: {node.status}
+
+  If anchor exists:
+  - This node was created from a quote in parent node {parent.title}
+  - Quoted span:
+    <<<
+    {anchor.quoteText}
+    >>>
+
+  Primary question (if available):
+  <<<
+  {node.primaryQuestion}
+  >>>
+
+### Message window
+Send only the last N node messages (e.g., N=12) to control cost.
 
 ---
 
 ## Provider Abstraction
 
-Implement `AIProvider`:
+AIProvider interface:
 
 - name: string
-- isConfigured(): boolean
-- generate(input): Promise<{text: string}>
+- isConfigured(settings): boolean
+- generate(request): Promise<{text: string}>
 
-Required providers:
-1) DummyProvider (default, always configured)
-2) OpenAICompatibleProvider (External provider; BYOK)
+Request includes:
+- systemPrompt: string
+- contextBlock: string
+- messages: Message[]
+- options: {maxTokens?, temperature?, stream?}
 
-Prompt policy (cost-safe):
-- Send only active node messages (e.g. last 10)
-- Include anchor quote if present
-- Do NOT send whole workspace
+Providers required:
+
+1) DummyProvider (default)
+- Always configured
+- Deterministic, plausible output
+- Must reference quote text if present
+- Must be short by default
+
+2) ExternalProvider (stub in v0.2.1)
+- Reads providerConfig from settings (user will implement)
+- If not configured: return a friendly error message inside assistant response
+- The UI must never break if provider fails; it should display an error toast and keep working.
 
 ---
 
-## OpenAI-Compatible Provider Requirements (ModelScope)
+## “Primary Question” Capture Rule (Commit Message)
 
-### Endpoint Shape
-Use OpenAI-compatible chat completions.
+To make the tree meaningful, each node must get a primary question.
 
-Base URL: user-configurable (default ModelScope):
-- https://api-inference.modelscope.cn/v1
+Rule:
+- If node.primaryQuestion is null, the first user message sent in that node becomes node.primaryQuestion.
+- node.title is updated to truncated primaryQuestion (e.g., first 60 chars).
 
-Target endpoint:
-- POST {baseUrl}/chat/completions
+Additionally:
+- Allow user to rename title manually (optional).
+- Renaming title does not change primaryQuestion.
 
-Headers:
-- Authorization: Bearer {apiKey}
-- Content-Type: application/json
+---
 
-Body:
-- model: {model}
-- messages: [{role, content}]
-- stream: true|false
-- max_tokens: optional
-- temperature: optional
+## Merge Semantics (v0.2.1)
 
-### Streaming
-If stream=true:
-- Parse Server-Sent Events style chunks (best effort).
-- For demo, it is acceptable to:
-  - show incremental text as it arrives, OR
-  - accumulate and display when complete if parsing is hard.
+### Merge as Link
+When user clicks “Merge as Link” on active child node:
 
-Important:
-- Your Python example uses `reasoning_content` and final content.
-- For web demo, it is acceptable to ignore reasoning tokens and display only final `content` if available.
-- If provider returns a separate reasoning field, do not break; just append what is safe to show.
+- Set node.status = linked
+- Set node.merge:
+  - mode = link
+  - targetNodeId = parentId
+  - note = optional text (auto-filled: “Linked to parent”)
+- In parent node:
+  - append reference item:
+    - label: "See: {child.title}"
+    - targetNodeId: child.id
 
+### Merge Inline
+When user clicks “Merge Inline” on active child node:
+
+- Set node.status = merged
+- Set node.merge:
+  - mode = inline
+  - targetNodeId = parentId
+  - note = summary text
+- In parent node:
+  - append a system or assistant message:
+    - “Merged from {child.title}: {note}”
+
+If provider is available:
+- You may generate the note using AI:
+  - Use child node messages + quote to produce a 3–6 sentence merge note.
 Fallback:
-- If streaming parse fails, retry with stream=false automatically.
+- Use a deterministic dummy summarization.
 
-### CORS Note (Demo)
-If browser CORS blocks direct calls:
-- Provide a clear error message in “Test Connection”.
-- Add an optional “Proxy URL” setting (default empty) for later.
-Do not implement a server in v0.2.0 unless necessary.
-
----
-
-## Persistence
-
-- Store workspace in localStorage (or IndexedDB optional)
-- Auto-save on every change
-- Export/import JSON
-- Exports must exclude apiKey and any provider secrets
-
----
-
-## Tech Stack
-
-- Vite + React + TypeScript (preferred)
-- Minimal CSS
-- No SSR frameworks
-
-Suggested structure:
-- /src/components (TreeView, ChatPane, SettingsModal, ExportImport, QuoteCard)
-- /src/models (types + helpers)
-- /src/providers (AIProvider, DummyProvider, OpenAICompatibleProvider)
-- /src/store (workspaceStore + persistence)
-- /src/utils (id, selection, fetch/stream parsing)
+Note:
+- v0.2.1 does not require rewriting parent messages in place. That can be v0.2.2+.
 
 ---
 
 ## Run/Test Automation (Required)
 
-Generate:
+Codex must generate:
 - runtest.sh (macOS/Linux)
 - runtest.ps1 (Windows)
 
-They must:
+Scripts must:
 1) npm install
-2) npm run build (must succeed)
-3) npm run preview (start and print URL)
-   - If you cannot stop automatically, print “Press Ctrl+C to stop preview”.
+2) npm run build
+3) npm run preview
+4) Print the preview URL
+If stopping preview automatically is difficult:
+- Print instructions: “Press Ctrl+C to stop.”
 
-Ensure package.json has:
+package.json must include:
 - dev: vite
 - build: vite build
 - preview: vite preview
 
-Add README “Local Run/Test” section with exact commands.
+README must include “Local Run/Test” with exact commands.
 
 ---
 
 ## Acceptance Criteria
 
-1) Root node chat works with DummyProvider
-2) Quote selection creates child node; tree updates
-3) Switching nodes restores per-node transcripts
-4) Settings allow switching Dummy vs External provider
-5) External provider can call OpenAI-compatible endpoint (ModelScope base_url) and display response
-6) Export/import workspace works and excludes apiKey
-7) npm run build + npm run preview work (validated by runtest scripts)
+v0.2.1 is successful if:
+
+1) Tree displays meaningful node labels (questions), not only root/branch icons
+2) Creating a child from quote works and switches active node
+3) Each node maintains its own transcript
+4) First user message sets primaryQuestion and updates tree label
+5) Provider calls include explicit system prompt + node context block
+6) DummyProvider always works; ExternalProvider failure does not break UI
+7) Merge as Link creates a navigable reference in parent
+8) Merge Inline appends a merge note back to parent
+9) Workspace persists locally and export/import works without exporting secrets
+10) npm build + preview works (validated by runtest scripts)
 
 ---
 
 ## Final Instruction to Codex
 
-Implement GPTree v0.2.0 exactly according to this plan.
+Implement GPTree v0.2.1 exactly according to this specification.
 
 Prioritize:
-- Tree + node chat UX
-- Quote → branch creation
+- Tree of questions (commit-like nodes)
+- Quote → child question creation
+- Explicit prompt assembly (system prompt + node context + node messages)
+- Merge semantics as status + parent notes/references
 - Local persistence + export/import
-- DummyProvider default
-- OpenAI-compatible External provider using baseUrl/apiKey/model settings
-- Generate runtest.sh and runtest.ps1 after core implementation
-
----
-
-## Local Run/Test
-
-Local dev:
-
-```bash
-npm install
-npm run dev
-```
-
-Build + preview:
-
-```bash
-npm run build
-npm run preview
-```
-
-Automated scripts:
-
-```bash
-./runtest.sh
-```
-
-```powershell
-./runtest.ps1
-```
+- DummyProvider default and reliable
+- Generate runtest scripts after implementing core app
