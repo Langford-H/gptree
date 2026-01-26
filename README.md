@@ -1,229 +1,140 @@
-# GPTree v0.2.1 — Standalone Static Web Demo (Vite)
-## Continuous Trunk Chat + Tree Metadata + Quote-Based Branch as New Chat Window
+# GPTree v0.2.2 --- Standalone Static Web Demo (Vite)
 
----
+## Root Seed + Branch Seed (C3-true) + Polished Git-Style Tree UI
 
-## 0. Design Contract (Non-Negotiable)
+Authoritative specification for Codex implementation.
 
-This version obeys three absolute rules:
+------------------------------------------------------------------------
 
-1) **The main chat window is continuous**, exactly like the current ChatGPT UI.
-2) **Creating a branch from a quote ALWAYS opens a new chat window**.
-3) The **tree is metadata and navigation**, not a replacement for the chat UI.
+## 0) What's New in v0.2.2
 
-If any implementation violates these, it is incorrect.
+This version introduces: 1. Seed discipline (Root Seed + Branch Seed) 2.
+C3-true summarization for branch origin context 3. Improved Tree UI
+(colored bands, commit dots, connectors)
 
----
+Merge-back is deferred.
 
-## 1. Core Concepts
+------------------------------------------------------------------------
 
-### Tree
-A **Tree** represents one top-level question/topic initiated by the user.
+## 1) Terminology
 
-- Created only by clicking **New Question**
-- Independent from other trees
-- One tree is active at a time
-- Each tree owns exactly one **trunk chat**
+Root Seed: Workspace-level system prompt.\
+Branch Seed: Branch-specific context packet.\
+Session: Continuous chat transcript.\
+Node: One user Send + assistant reply.
 
-### Trunk Chat
-- The main continuous conversation for a tree
-- Behaves exactly like ChatGPT:
-  - user sends messages
-  - assistant replies
-  - transcript grows linearly
-- Never split, replaced, or reset unless:
-  - user starts a New Question, or
-  - user clicks Clear All
+------------------------------------------------------------------------
 
-### Node (Commit)
-A **Node** is a *record* of one user question + its assistant answer.
+## 2) Behavioral Rules
 
-- Nodes are created **on every Send**
-- Nodes are appended sequentially to the tree
-- Nodes exist to:
-  - label the tree
-  - enable quote-based branching
-  - enable merge-back later
-- Nodes do **not** own their own chat UI in v0.2.1
+-   Node = one user message + assistant answer
+-   Every Send creates a Node
+-   Branching creates a new Session
+-   Branches can branch
+-   Merge-back deferred
 
----
+------------------------------------------------------------------------
 
-## 2. When Things Are Created (Precise Rules)
+## 3) Seeds
 
-### 2.1 New Tree
-Trigger:
-- User clicks **New Question**
+### Root Seed (workspace.settings.rootSeed)
 
-Effect:
-- Current tree is folded/collapsed
-- New tree is created
-- New empty trunk chat is created
-- Focus switches to the new trunk chat
+Default:
 
-No other action creates a tree.
+You are an assistant helping manage a tree-structured Q&A workflow
+(GPTree). Rules: - Treat each user message as a commit node. - Be
+concise and technical. - Do not hallucinate missing context. - Ask at
+most one clarifying question if needed. - Prioritize branch seed context
+in branch sessions.
 
----
+### Branch Seed (session.branchSeed)
 
-### 2.2 New Node (Commit)
-Trigger:
-- User clicks **Send** in the trunk chat
+Fields: - sourceTreeId - sourceSessionId - sourceNodeId - quoteText -
+originSummary - createdAt
 
-Effect:
-- A new node is created:
-  - node.question = user message
-  - node.answer = assistant reply
-- Node is appended to the tree’s node list
-- Tree sidebar updates label using node.question
-- Trunk chat continues uninterrupted
+------------------------------------------------------------------------
 
-There is **no separate node UI**.
+## 4) C3-True Branch Seed Summarization
 
----
+Trigger: Branch creation.
 
-### 2.3 Create Branch from Quote (Critical)
-Trigger:
-- User selects text in the trunk chat
-- User clicks **Create Branch from Quote**
+Context: - quoted span - source node Q/A - last K preceding nodes (K=4)
 
-Effect (must happen in this order):
-1) A new branch node is created in the tree:
-   - parentNodeId = node containing quoted text
-   - anchor.quoteText = selected text
-2) A **new chat window** is opened (new tab or new chat session)
-3) The new chat is pre-seeded with:
-   - explanation that this is a branch discussion
-   - the quoted span
-   - minimal parent context (the assistant answer containing the quote)
-4) The original trunk chat:
-   - remains open
-   - remains unchanged
-   - does not switch context
+Summarizer system prompt:
 
-This behavior is mandatory.
+You are generating a compact context summary for a branch discussion.
+Produce 5--8 bullet points. Do not answer the branch question.
 
----
+------------------------------------------------------------------------
 
-## 3. Tree Semantics (Left Sidebar)
+## 5) Branch Prompt Assembly
 
-### Purpose of the Tree
-The tree is **not** the conversation.
-It is:
-- a map of questions asked
-- a map of where branches were created
-- a way to navigate history and branches
+Trunk: - System: Root Seed - History: last M nodes - User: question
 
-### Rendering Rules
-- Each node label = truncated user question
-- Sequential questions appear on the same vertical line
-- Branch nodes appear indented under their source node
-- Clicking a node:
-  - highlights it
-  - optionally scrolls trunk chat to its message
-  - does NOT replace the trunk chat
+Branch: - System: Root Seed + Branch Instruction - User Context Block:
+quote + originSummary - History: last M branch nodes - User: question
 
-### Tree is read-only with respect to chat flow in v0.2.1
+Branch Instruction:
 
----
+You are in a BRANCH session derived from a quoted span. Prioritize the
+quoted span and originSummary.
 
-## 4. Branch Chats
+------------------------------------------------------------------------
 
-### Branch Chat Characteristics
-- Opened in a **new chat window**
-- Independent conversation state
-- Uses its own AI context
-- Knows it is a branch (system prompt)
-- References:
-  - quoted text
-  - source node
-  - source tree
+## 6) Data Model Additions
 
-### Branch Chat Does NOT:
-- modify trunk chat automatically
-- share live state with trunk chat
-- collapse trunk UI
+Workspace.settings: - rootSeed - uiTheme { baseFontSize, palette }
 
----
+Session: - branchSeed - colorKey
 
-## 5. Prompt Assembly (Deterministic)
+------------------------------------------------------------------------
 
-### Trunk Chat Prompt
-Every assistant call in trunk chat includes:
-1) workspace.systemPrompt
-2) tree context:
-   - tree id
-   - current node count
-3) recent trunk messages (last K)
+## 7) Tree UI Rendering
 
-### Branch Chat Prompt
-Every assistant call in branch chat includes:
-1) workspace.systemPrompt
-2) branch system instruction:
-   - “This is a branch discussion derived from another conversation.”
-3) quoted span (verbatim)
-4) parent answer excerpt
-5) branch chat messages
+-   Vertical colored band per session
+-   Commit dots (filled = answered, hollow = pending)
+-   Branch connectors
+-   Nested branches allowed
 
-Full tree/workspace is never sent.
+Color assignment: - trunk = palette\[0\] - branch = hash(sessionId) %
+palette.length
 
----
+------------------------------------------------------------------------
 
-## 6. Cleanup
+## 8) UI/UX Refinements
 
-### Clear All
-Trigger:
-- User clicks **Clear All**
+-   Larger fonts
+-   Better spacing
+-   Icons for trunk/branch
+-   Tooltip for quote selection
 
-Effect:
-- All trees deleted
-- All chats closed
-- systemPrompt reset to default
-- providerConfig cleared (optional)
-- Fresh empty workspace created
+------------------------------------------------------------------------
 
-No partial cleanup in v0.2.1.
+## 9) Providers
 
----
+DummyProvider: deterministic.\
+ExternalProvider: graceful failure handling.
 
-## 7. Providers
+------------------------------------------------------------------------
 
-### DummyProvider (default)
-- Always available
-- Deterministic responses
-- Must acknowledge quote in branch chats
+## 10) Persistence
 
-### ExternalProvider
-- Uses user-provided API config
-- Failure produces readable assistant message
-- Must not crash UI
+-   branchSeed persisted locally
+-   export excludes API keys
+-   rootSeed included
 
----
+------------------------------------------------------------------------
 
-## 8. Persistence and Export
-- Workspace stored locally
-- Export/import JSON supported
-- API keys never exported
+## 11) Acceptance Criteria
 
----
+1.  Root Seed always used.
+2.  Branch creation triggers summarizer.
+3.  Branch calls inject quote + originSummary.
+4.  Colored tree bands + commit dots.
+5.  Nested branches render correctly.
 
-## 9. Acceptance Criteria (v0.2.1)
-
-1) Trunk chat behaves exactly like ChatGPT (continuous).
-2) Sending messages never forces a new chat.
-3) Each Send creates a node in the tree.
-4) Tree visually reflects question history and branches.
-5) Create Branch from Quote opens a **new chat window**.
-6) Trunk chat remains untouched after branching.
-7) Branch chat is seeded with quote + parent context.
-8) Clear All resets everything cleanly.
-
----
+------------------------------------------------------------------------
 
 ## Final Instruction to Codex
 
-Implement GPTree v0.2.1 exactly as specified.
-
-Key invariants:
-- Continuous trunk chat
-- Branch = new chat window
-- Tree is metadata, not a chat switcher
-- No split panels in this version
+Implement GPTree v0.2.2 exactly per this specification.
