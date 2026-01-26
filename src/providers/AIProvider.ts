@@ -1,19 +1,21 @@
-import { ProviderSettings } from "../models/types";
+import { ProviderConfig } from "../models/types";
 
-export type PromptMessage = {
+export interface ProviderMessage {
   role: "user" | "assistant" | "system";
   content: string;
-};
+}
 
-export interface GenerateInput {
-  messages: PromptMessage[];
-  settings: ProviderSettings;
+export interface ProviderRequest {
+  systemPrompt: string;
+  contextBlock: string;
+  messages: ProviderMessage[];
+  options: ProviderConfig;
   onToken?: (chunk: string) => void;
   signal?: AbortSignal;
 }
 
 export interface AIProvider {
   name: string;
-  isConfigured: (settings: ProviderSettings) => boolean;
-  generate: (input: GenerateInput) => Promise<{ text: string }>;
+  isConfigured: (config: ProviderConfig) => boolean;
+  generate: (request: ProviderRequest) => Promise<{ text: string }>;
 }

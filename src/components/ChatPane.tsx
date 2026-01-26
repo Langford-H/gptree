@@ -1,178 +1,182 @@
-﻿import React, { useEffect, useRef, useState } from "react";
-import { Message, Node } from "../models/types";
-import QuoteCard from "./QuoteCard";
+import React, { useEffect, useRef, useState } from "react";
+import { Node } from "../models/types";
 
 interface ChatPaneProps {
-  node: Node;
-  breadcrumb: string[];
+  nodes: Node[];
+  treeTitle: string;
+  sessionLabel: string;
+  sessionKind: "trunk" | "branch";
+  branchQuote?: string;
+  selectedNodeId?: string | null;
+  scrollToNodeId?: string | null;
+  errorMessage?: string;
   isGenerating: boolean;
-  quoteSourceTitle?: string;
-  onOpenSource: () => void;
+  onNewQuestion: () => void;
+  onCreateBranch: (quoteText: string, sourceNodeId: string) => void;
+  onClearAll: () => void;
   onSend: (text: string) => void;
-  onCreateBranch: (quoteText: string) => void;
-  onMergeInline: () => void;
-  onMergeLink: () => void;
-  onOpenNode: (nodeId: string) => void;
+  onScrollComplete: () => void;
 }
 
-function MessageBubble({
-  message,
-  onOpenNode,
-}: {
-  message: Message;
-  onOpenNode: (nodeId: string) => void;
-}) {
-  if (message.meta?.linkNodeId) {
-    return (
-      <div className={`message ${message.role}`}>
-        <div>{message.text}</div>
-        <button
-          className="link-button"
-          type="button"
-          onClick={() => onOpenNode(message.meta?.linkNodeId ?? "")}
-        >
-          Open Branch
-        </button>
-      </div>
-    );
+function findNodeIdFromSelection(selection: Selection | null) {
+  if (!selection) {
+    return null;
   }
-
-  return <div className={`message ${message.role}`}>{message.text}</div>;
+  const nodes = [selection.anchorNode, selection.focusNode];
+  for (const node of nodes) {
+    if (!node) {
+      continue;
+    }
+    const element = node instanceof Element ? node : node.parentElement;
+    const container = element?.closest("[data-node-id]");
+    if (container) {
+      return container.getAttribute("data-node-id");
+    }
+  }
+  return null;
 }
 
 export default function ChatPane({
-  node,
-  breadcrumb,
+  nodes,
+  treeTitle,
+  sessionLabel,
+  sessionKind,
+  branchQuote,
+  selectedNodeId,
+  scrollToNodeId,
+  errorMessage,
   isGenerating,
-  quoteSourceTitle,
-  onOpenSource,
-  onSend,
+  onNewQuestion,
   onCreateBranch,
-  onMergeInline,
-  onMergeLink,
-  onOpenNode,
+  onClearAll,
+  onSend,
+  onScrollComplete,
 }: ChatPaneProps) {
   const transcriptRef = useRef<HTMLDivElement>(null);
+  const selectionRef = useRef<{ text: string; nodeId: string } | null>(null);
   const [composerText, setComposerText] = useState("");
   const [selectionError, setSelectionError] = useState("");
 
   useEffect(() => {
-    setComposerText("");
-    setSelectionError("");
-  }, [node.id]);
-
-  useEffect(() => {
-    const element = transcriptRef.current;
-    if (element) {
-      element.scrollTop = element.scrollHeight;
+    if (!scrollToNodeId || !transcriptRef.current) {
+      return;
     }
-  }, [node.messages]);
+    const target = transcriptRef.current.querySelector(
+      `[data-node-id="${scrollToNodeId}"]`
+    ) as HTMLElement | null;
+    if (target) {
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+    onScrollComplete();
+  }, [scrollToNodeId, onScrollComplete]);
 
   const handleSend = () => {
     const text = composerText.trim();
     if (!text || isGenerating) {
       return;
     }
-
     setComposerText("");
     onSend(text);
   };
 
-  const handleCreateBranch = () => {
+  const captureSelection = () => {
     const selection = window.getSelection();
     if (!selection || selection.isCollapsed) {
-      setSelectionError("Select transcript text first.");
+      selectionRef.current = null;
       return;
     }
-
     const quoteText = selection.toString().trim();
     if (!quoteText) {
-      setSelectionError("Selection is empty.");
+      selectionRef.current = null;
       return;
     }
-
-    const anchorNode = selection.anchorNode;
-    if (transcriptRef.current && anchorNode) {
-      if (!transcriptRef.current.contains(anchorNode)) {
-        setSelectionError("Selection must be inside the transcript.");
-        return;
-      }
+    const nodeId = findNodeIdFromSelection(selection);
+    if (!nodeId) {
+      selectionRef.current = null;
+      return;
     }
-
-    selection.removeAllRanges();
+    selectionRef.current = { text: quoteText, nodeId };
     setSelectionError("");
-    onCreateBranch(quoteText);
   };
 
-  const canMerge = Boolean(node.parentId);
+  const handleCreateBranch = () => {
+    const selection = selectionRef.current;
+    if (!selection) {
+      setSelectionError("Select text in the transcript first.");
+      return;
+    }
+    setSelectionError("");
+    selectionRef.current = null;
+    onCreateBranch(selection.text, selection.nodeId);
+  };
 
   return (
     <div className="chat-pane">
       <div className="pane-header">
         <div>
-          <h2 className="pane-title">{node.title}</h2>
-          <div className="breadcrumb">{breadcrumb.join(" / ")}</div>
+          <h2 className="pane-title">{treeTitle}</h2>
+          <div className="breadcrumb">{sessionLabel}</div>
         </div>
         <div className="pane-actions">
-          <span className={`status-badge status-${node.status}`}>{node.status}</span>
+          <button className="button-secondary" type="button" onClick={onNewQuestion}>
+            New Question
+          </button>
+          <button className="button-secondary" type="button" onClick={handleCreateBranch}>
+            Create Branch from Quote
+          </button>
+          <button className="button-secondary" type="button" onClick={onClearAll}>
+            Clear All
+          </button>
         </div>
       </div>
 
-      {node.anchor && quoteSourceTitle ? (
-        <QuoteCard
-          anchor={node.anchor}
-          sourceTitle={quoteSourceTitle}
-          onOpenSource={onOpenSource}
-        />
+      {sessionKind === "branch" && branchQuote ? (
+        <div className="branch-banner">
+          <div className="branch-title">Branch discussion</div>
+          <div className="branch-quote">{branchQuote}</div>
+        </div>
       ) : null}
 
-      <div className="transcript" ref={transcriptRef}>
-        {node.messages.length === 0 ? (
-          <div className="empty-state">No messages yet.</div>
+      <div className="chat-transcript" ref={transcriptRef} onMouseUp={captureSelection}>
+        {nodes.length === 0 ? (
+          <div className="empty-transcript">
+            No messages yet. Ask a question to start this chat.
+          </div>
         ) : (
-          node.messages.map((message) => (
-            <MessageBubble
-              key={message.id}
-              message={message}
-              onOpenNode={onOpenNode}
-            />
-          ))
+          nodes.map((node, index) => {
+            const isLast = index === nodes.length - 1;
+            return (
+            <div
+              key={node.id}
+              className={`message-group ${
+                selectedNodeId === node.id ? "selected" : ""
+              }`}
+              data-node-id={node.id}
+            >
+              <div className="message message-user">{node.question}</div>
+              <div className="message message-assistant">
+                {node.answer
+                  ? node.answer
+                  : isGenerating && isLast
+                    ? "Generating response..."
+                    : "Awaiting response."}
+              </div>
+            </div>
+            );
+          })
         )}
       </div>
+
+      {selectionError ? <div className="selection-error">{selectionError}</div> : null}
+      {errorMessage ? <div className="error-banner">{errorMessage}</div> : null}
 
       <div className="composer">
         <textarea
           value={composerText}
           onChange={(event) => setComposerText(event.target.value)}
-          placeholder="Write a message..."
+          placeholder="Type your question..."
         />
-        {selectionError ? (
-          <div className="selection-error">{selectionError}</div>
-        ) : null}
         <div className="composer-actions">
-          <button
-            className="button-secondary"
-            type="button"
-            onClick={handleCreateBranch}
-          >
-            Create Branch from Quote
-          </button>
-          <button
-            className="button-secondary"
-            type="button"
-            onClick={onMergeInline}
-            disabled={!canMerge}
-          >
-            Merge Inline
-          </button>
-          <button
-            className="button-secondary"
-            type="button"
-            onClick={onMergeLink}
-            disabled={!canMerge}
-          >
-            Merge as Link
-          </button>
           <button
             className="button-primary"
             type="button"

@@ -1,373 +1,508 @@
-﻿import React, { useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import ChatPane from "./components/ChatPane";
 import SettingsModal from "./components/SettingsModal";
 import TreeView from "./components/TreeView";
-import { Message, Node, Workspace } from "./models/types";
+import { ProviderMessage } from "./providers/AIProvider";
 import { DummyProvider } from "./providers/DummyProvider";
 import { OpenAICompatibleProvider } from "./providers/OpenAICompatibleProvider";
+import { Node, Session, Tree, Workspace } from "./models/types";
 import {
   createNode,
+  createSession,
+  createTree,
+  createWorkspace,
   loadWorkspace,
   normalizeWorkspace,
   saveWorkspace,
 } from "./store/workspaceStore";
-import {
-  DEFAULT_SETTINGS,
-  loadSettings,
-  sanitizeSettings,
-  saveSettings,
-} from "./store/settingsStore";
-import { PromptMessage } from "./providers/AIProvider";
-import { createId } from "./utils/id";
 
-const EXPORT_VERSION = "0.2.0";
+const EXPORT_VERSION = "0.2.1";
+const BRANCH_EXCERPT_LIMIT = 480;
 
-function buildBreadcrumb(node: Node, workspace: Workspace) {
-  const path: string[] = [];
-  let current: Node | undefined = node;
-  while (current) {
-    path.unshift(current.title);
-    if (!current.parentId) {
-      break;
-    }
-    current = workspace.nodes[current.parentId];
+function truncateText(text: string, max = 60) {
+  const trimmed = text.trim();
+  if (trimmed.length <= max) {
+    return trimmed;
   }
-  return path;
+  return `${trimmed.slice(0, max - 3)}...`;
 }
 
-function buildPromptMessages(
-  node: Node,
-  workspace: Workspace,
-  userMessage?: Message
-): PromptMessage[] {
-  const sourceTitle = node.anchor
-    ? workspace.nodes[node.anchor.sourceNodeId]?.title ?? "Source"
-    : "";
-  const baseMessages = userMessage ? [...node.messages, userMessage] : node.messages;
-  const recent = baseMessages.slice(-10).map((message) => ({
-    role: message.role,
-    content: message.text,
-  }));
-
-  if (node.anchor) {
-    return [
-      {
-        role: "system",
-        content: `Anchor quote from ${sourceTitle}:\n"${node.anchor.quoteText}"`,
-      },
-      ...recent,
-    ];
-  }
-
-  return recent;
+function getNodeLabel(node: Node) {
+  return truncateText(node.question || "Untitled question");
 }
 
-function ensureExpanded(workspace: Workspace, nodeId: string) {
-  const expanded = new Set(workspace.ui.expandedNodeIds);
-  let current: Node | undefined = workspace.nodes[nodeId];
-  while (current) {
-    expanded.add(current.id);
-    if (!current.parentId) {
+function getSessionNodes(session: Session, nodes: Record<string, Node>) {
+  if (!session.headNodeId) {
+    return [];
+  }
+  const chain: Node[] = [];
+  let currentId: string | null = session.headNodeId;
+  const visited = new Set<string>();
+  while (currentId) {
+    if (visited.has(currentId)) {
       break;
     }
-    current = workspace.nodes[current.parentId];
+    visited.add(currentId);
+    const node = nodes[currentId];
+    if (!node) {
+      break;
+    }
+    chain.push(node);
+    currentId = node.nextId;
   }
-  return Array.from(expanded);
+  return chain;
+}
+
+function buildHistoryMessages(nodes: Node[], limit: number): ProviderMessage[] {
+  const transcriptNodes = nodes.filter((node) => node.question.trim().length > 0);
+  const start = Math.max(0, transcriptNodes.length - limit);
+  const recent = transcriptNodes.slice(start);
+  const messages: ProviderMessage[] = [];
+  for (const node of recent) {
+    messages.push({ role: "user", content: node.question });
+    if (node.answer) {
+      messages.push({ role: "assistant", content: node.answer });
+    }
+  }
+  return messages;
+}
+
+function buildTrunkContext(tree: Tree, nodeCount: number) {
+  return [`Tree: ${tree.id}`, `Node count: ${nodeCount}`].join("\n");
+}
+
+function buildBranchContext(origin: { quoteText: string; excerpt: string }, includeSummary: boolean) {
+  const lines = ["Branch session: true", "Quoted span:", "<<<", origin.quoteText, ">>>"];
+  if (origin.excerpt) {
+    lines.push("", "Origin context excerpt:", "<<<", origin.excerpt, ">>>");
+  }
+  if (includeSummary) {
+    lines.push("", "Instruction: Provide a 5-8 line summary of origin context before answering.");
+  }
+  return lines.join("\n");
 }
 
 export default function App() {
   const [workspace, setWorkspace] = useState<Workspace>(() => loadWorkspace());
-  const [settings, setSettings] = useState(() => loadSettings());
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [scrollTargetId, setScrollTargetId] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | undefined>(undefined);
 
-  const activeNode =
-    workspace.nodes[workspace.ui.activeNodeId] ??
-    workspace.nodes[workspace.rootNodeId];
+  const activeTree = workspace.activeTreeId
+    ? workspace.trees[workspace.activeTreeId]
+    : null;
+  const activeSession = workspace.activeSessionId
+    ? workspace.sessions[workspace.activeSessionId]
+    : null;
 
-  const breadcrumb = useMemo(
-    () => buildBreadcrumb(activeNode, workspace),
-    [activeNode, workspace]
-  );
-
-  const quoteSourceTitle = activeNode.anchor
-    ? workspace.nodes[activeNode.anchor.sourceNodeId]?.title ?? "Source"
-    : undefined;
+  const activeSessionNodes = useMemo(() => {
+    if (!activeSession) {
+      return [];
+    }
+    return getSessionNodes(activeSession, workspace.nodes);
+  }, [activeSession, workspace.nodes]);
 
   const persistWorkspace = (next: Workspace) => {
     saveWorkspace(next);
     return next;
   };
 
-  const persistSettings = (nextSettings: typeof settings) => {
-    saveSettings(nextSettings);
-    return nextSettings;
-  };
-
   const updateWorkspace = (updater: (current: Workspace) => Workspace) => {
     setWorkspace((current) => persistWorkspace(updater(current)));
   };
 
-  const updateSettings = (nextSettings: typeof settings) => {
-    setSettings(persistSettings(nextSettings));
-  };
-
-  const selectNode = (nodeId: string) => {
+  const handleSelectTree = (treeId: string) => {
+    setErrorMessage(undefined);
+    setSelectedNodeId(null);
+    setScrollTargetId(null);
     updateWorkspace((current) => {
-      if (!current.nodes[nodeId]) {
+      const tree = current.trees[treeId];
+      if (!tree) {
         return current;
       }
       return {
         ...current,
-        ui: {
-          ...current.ui,
-          activeNodeId: nodeId,
-          expandedNodeIds: ensureExpanded(current, nodeId),
-        },
-      };
-    });
-  };
-
-  const toggleExpand = (nodeId: string) => {
-    updateWorkspace((current) => {
-      const expanded = new Set(current.ui.expandedNodeIds);
-      if (expanded.has(nodeId)) {
-        expanded.delete(nodeId);
-      } else {
-        expanded.add(nodeId);
-      }
-      return {
-        ...current,
-        ui: {
-          ...current.ui,
-          expandedNodeIds: Array.from(expanded),
-        },
-      };
-    });
-  };
-
-  const appendMessages = (nodeId: string, newMessages: Message[]) => {
-    updateWorkspace((current) => {
-      const node = current.nodes[nodeId];
-      if (!node) {
-        return current;
-      }
-      const now = Date.now();
-      const status = node.status === "draft" ? "open" : node.status;
-      const updatedNode = {
-        ...node,
-        status,
-        messages: [...node.messages, ...newMessages],
-        updatedAt: now,
-      };
-      return {
-        ...current,
-        nodes: {
-          ...current.nodes,
-          [nodeId]: updatedNode,
-        },
-        updatedAt: now,
-      };
-    });
-  };
-
-  const updateMessageText = (nodeId: string, messageId: string, text: string) => {
-    updateWorkspace((current) => {
-      const node = current.nodes[nodeId];
-      if (!node) {
-        return current;
-      }
-      const now = Date.now();
-      const messages = node.messages.map((message) =>
-        message.id === messageId ? { ...message, text } : message
-      );
-      return {
-        ...current,
-        nodes: {
-          ...current.nodes,
-          [nodeId]: {
-            ...node,
-            messages,
-            updatedAt: now,
+        activeTreeId: treeId,
+        activeSessionId: tree.trunkSessionId,
+        trees: {
+          ...current.trees,
+          [treeId]: {
+            ...tree,
+            collapsed: false,
           },
         },
-        updatedAt: now,
       };
     });
+  };
+
+  const handleToggleTree = (treeId: string) => {
+    updateWorkspace((current) => {
+      const tree = current.trees[treeId];
+      if (!tree) {
+        return current;
+      }
+      return {
+        ...current,
+        trees: {
+          ...current.trees,
+          [treeId]: {
+            ...tree,
+            collapsed: !tree.collapsed,
+          },
+        },
+      };
+    });
+  };
+
+  const handleSelectSession = (sessionId: string) => {
+    const session = workspace.sessions[sessionId];
+    if (!session) {
+      return;
+    }
+    setErrorMessage(undefined);
+    setSelectedNodeId(null);
+    setScrollTargetId(null);
+    updateWorkspace((current) => {
+      const tree = current.trees[session.treeId];
+      return {
+        ...current,
+        activeTreeId: session.treeId,
+        activeSessionId: sessionId,
+        trees: tree
+          ? {
+              ...current.trees,
+              [tree.id]: {
+                ...tree,
+                collapsed: false,
+              },
+            }
+          : current.trees,
+      };
+    });
+  };
+
+  const handleSelectNode = (nodeId: string) => {
+    const node = workspace.nodes[nodeId];
+    if (!node) {
+      return;
+    }
+    const session = workspace.sessions[node.sessionId];
+    if (!session) {
+      return;
+    }
+    setErrorMessage(undefined);
+    setSelectedNodeId(nodeId);
+    setScrollTargetId(nodeId);
+    updateWorkspace((current) => {
+      const tree = current.trees[session.treeId];
+      return {
+        ...current,
+        activeTreeId: session.treeId,
+        activeSessionId: session.id,
+        trees: tree
+          ? {
+              ...current.trees,
+              [tree.id]: {
+                ...tree,
+                collapsed: false,
+              },
+            }
+          : current.trees,
+      };
+    });
+  };
+
+  const handleNewQuestion = () => {
+    setErrorMessage(undefined);
+    setSelectedNodeId(null);
+    setScrollTargetId(null);
+    const { tree, session } = createTree();
+    updateWorkspace((current) => ({
+      ...current,
+      trees: {
+        ...Object.fromEntries(
+          Object.entries(current.trees).map(([id, value]) => [
+            id,
+            id === current.activeTreeId ? { ...value, collapsed: true } : value,
+          ])
+        ),
+        [tree.id]: tree,
+      },
+      sessions: {
+        ...current.sessions,
+        [session.id]: session,
+      },
+      activeTreeId: tree.id,
+      activeSessionId: session.id,
+    }));
+  };
+
+  const handleCreateBranch = (quoteText: string, sourceNodeId: string) => {
+    if (!activeTree || !activeSession) {
+      return;
+    }
+    const sourceNode = workspace.nodes[sourceNodeId];
+    if (!sourceNode) {
+      return;
+    }
+    setErrorMessage(undefined);
+    const origin = {
+      sourceSessionId: sourceNode.sessionId,
+      sourceNodeId,
+      quoteText,
+      createdAt: Date.now(),
+    };
+    const branchSession = createSession({
+      treeId: activeTree.id,
+      kind: "branch",
+      origin,
+    });
+
+    updateWorkspace((current) => {
+      const tree = current.trees[activeTree.id];
+      if (!tree) {
+        return current;
+      }
+      return {
+        ...current,
+        sessions: {
+          ...current.sessions,
+          [branchSession.id]: branchSession,
+        },
+        trees: {
+          ...current.trees,
+          [tree.id]: {
+            ...tree,
+            sessionIds: [...tree.sessionIds, branchSession.id],
+            updatedAt: Date.now(),
+          },
+        },
+        activeSessionId: branchSession.id,
+      };
+    });
+    setSelectedNodeId(null);
+    setScrollTargetId(null);
   };
 
   const handleSend = async (text: string) => {
-    const nodeId = activeNode.id;
+    if (!activeTree || !activeSession) {
+      return;
+    }
     const now = Date.now();
-    const userMessage: Message = {
-      id: createId("msg"),
-      role: "user",
-      text,
-      ts: now,
-    };
+    const maxContextNodes = workspace.settings.summarizationPolicy.maxContextNodes;
+    const historyNodes = activeSessionNodes;
+    const isFirstNode = !activeSession.headNodeId;
+    const newNode = createNode({
+      sessionId: activeSession.id,
+      question: text,
+      prevId: activeSession.tailNodeId,
+    });
+
+    setErrorMessage(undefined);
+    setIsGenerating(true);
+    setSelectedNodeId(newNode.id);
+    setScrollTargetId(newNode.id);
+
+    updateWorkspace((current) => {
+      const session = current.sessions[activeSession.id];
+      const tree = current.trees[activeTree.id];
+      if (!session || !tree) {
+        return current;
+      }
+      const updatedNodes = {
+        ...current.nodes,
+        [newNode.id]: newNode,
+      };
+      if (session.tailNodeId && current.nodes[session.tailNodeId]) {
+        const tail = current.nodes[session.tailNodeId];
+        updatedNodes[tail.id] = {
+          ...tail,
+          nextId: newNode.id,
+          updatedAt: now,
+        };
+      }
+      const updatedSession: Session = {
+        ...session,
+        headNodeId: session.headNodeId ?? newNode.id,
+        tailNodeId: newNode.id,
+        updatedAt: now,
+      };
+      const updatedTree: Tree =
+        session.kind === "trunk" && !session.headNodeId
+          ? {
+              ...tree,
+              title: truncateText(text),
+              updatedAt: now,
+            }
+          : {
+              ...tree,
+              updatedAt: now,
+            };
+      return {
+        ...current,
+        nodes: updatedNodes,
+        sessions: {
+          ...current.sessions,
+          [session.id]: updatedSession,
+        },
+        trees: {
+          ...current.trees,
+          [tree.id]: updatedTree,
+        },
+      };
+    });
 
     const provider =
-      settings.providerMode === "external"
+      workspace.settings.providerMode === "external"
         ? OpenAICompatibleProvider
         : DummyProvider;
 
-    if (!provider.isConfigured(settings)) {
-      appendMessages(nodeId, [
-        userMessage,
-        {
-          id: createId("msg"),
-          role: "system",
-          text: "External provider is not configured. Open Settings to add an API key.",
-          ts: now,
-        },
-      ]);
+    if (
+      workspace.settings.providerMode === "external" &&
+      !provider.isConfigured(workspace.settings.providerConfig)
+    ) {
+      const message = "External provider is not configured.";
+      updateWorkspace((current) => {
+        const node = current.nodes[newNode.id];
+        if (!node) {
+          return current;
+        }
+        return {
+          ...current,
+          nodes: {
+            ...current.nodes,
+            [node.id]: {
+              ...node,
+              answer: message,
+              updatedAt: Date.now(),
+            },
+          },
+        };
+      });
+      setErrorMessage(message);
+      setIsGenerating(false);
       return;
     }
 
-    const assistantMessage: Message = {
-      id: createId("msg"),
-      role: "assistant",
-      text: "",
-      ts: now,
-    };
+    const promptMessages = buildHistoryMessages(historyNodes, maxContextNodes);
+    promptMessages.push({ role: "user", content: text });
 
-    appendMessages(nodeId, [userMessage, assistantMessage]);
-    setIsGenerating(true);
+    let systemPrompt = workspace.settings.systemPrompt;
+    let contextBlock = buildTrunkContext(
+      activeTree,
+      Object.values(workspace.nodes).filter((node) => node.sessionId === activeSession.id).length +
+        1
+    );
 
-    let streamedText = "";
+    if (activeSession.kind === "branch" && activeSession.origin) {
+      const sourceNode = workspace.nodes[activeSession.origin.sourceNodeId];
+      const excerpt = sourceNode?.answer
+        ? truncateText(sourceNode.answer, BRANCH_EXCERPT_LIMIT)
+        : "";
+      contextBlock = buildBranchContext({ quoteText: activeSession.origin.quoteText, excerpt }, isFirstNode);
+      if (isFirstNode) {
+        systemPrompt = `${systemPrompt}\n\nBranch instruction: This is a branch discussion tied to a quoted span. Summarize origin context (5-8 lines) before answering.`;
+      }
+    }
+
     try {
-      const promptMessages = buildPromptMessages(activeNode, workspace, userMessage);
       const response = await provider.generate({
+        systemPrompt,
+        contextBlock,
         messages: promptMessages,
-        settings,
+        options: workspace.settings.providerConfig,
         onToken: (chunk) => {
-          streamedText += chunk;
-          updateMessageText(nodeId, assistantMessage.id, streamedText);
+          updateWorkspace((current) => {
+            const node = current.nodes[newNode.id];
+            if (!node) {
+              return current;
+            }
+            return {
+              ...current,
+              nodes: {
+                ...current.nodes,
+                [node.id]: {
+                  ...node,
+                  answer: (node.answer || "") + chunk,
+                  updatedAt: Date.now(),
+                },
+              },
+            };
+          });
         },
       });
-
-      const finalText = streamedText || response.text;
-      updateMessageText(nodeId, assistantMessage.id, finalText);
+      updateWorkspace((current) => {
+        const node = current.nodes[newNode.id];
+        if (!node) {
+          return current;
+        }
+        return {
+          ...current,
+          nodes: {
+            ...current.nodes,
+            [node.id]: {
+              ...node,
+              answer: node.answer && node.answer.length > 0 ? node.answer : response.text,
+              updatedAt: Date.now(),
+            },
+          },
+        };
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      updateMessageText(nodeId, assistantMessage.id, `Error: ${message}`);
+      updateWorkspace((current) => {
+        const node = current.nodes[newNode.id];
+        if (!node) {
+          return current;
+        }
+        return {
+          ...current,
+          nodes: {
+            ...current.nodes,
+            [node.id]: {
+              ...node,
+              answer: `Error: ${message}`,
+              updatedAt: Date.now(),
+            },
+          },
+        };
+      });
+      setErrorMessage(message);
     } finally {
       setIsGenerating(false);
     }
   };
 
-  const handleCreateBranch = (quoteText: string) => {
-    updateWorkspace((current) => {
-      const parent = current.nodes[current.ui.activeNodeId];
-      if (!parent) {
-        return current;
-      }
-
-      const childTitle = `Branch ${parent.childrenIds.length + 1}`;
-      const childNode = createNode({
-        parentId: parent.id,
-        title: childTitle,
-        anchor: {
-          sourceNodeId: parent.id,
-          quoteText,
-        },
-      });
-
-      const now = Date.now();
-      const updatedParent = {
-        ...parent,
-        childrenIds: [...parent.childrenIds, childNode.id],
-        updatedAt: now,
-      };
-
-      const expandedNodeIds = Array.from(
-        new Set([...current.ui.expandedNodeIds, parent.id, childNode.id])
-      );
-
-      return {
-        ...current,
-        nodes: {
-          ...current.nodes,
-          [parent.id]: updatedParent,
-          [childNode.id]: childNode,
-        },
-        ui: {
-          ...current.ui,
-          activeNodeId: childNode.id,
-          expandedNodeIds,
-        },
-        updatedAt: now,
-      };
-    });
+  const handleClearAll = () => {
+    const confirmed = window.confirm(
+      "Clear all trees and reset workspace? This cannot be undone."
+    );
+    if (!confirmed) {
+      return;
+    }
+    setErrorMessage(undefined);
+    setSelectedNodeId(null);
+    setScrollTargetId(null);
+    const nextWorkspace = createWorkspace();
+    setWorkspace(persistWorkspace(nextWorkspace));
   };
 
-  const handleMerge = (mode: "inline" | "link") => {
-    updateWorkspace((current) => {
-      const node = current.nodes[current.ui.activeNodeId];
-      if (!node || !node.parentId) {
-        return current;
-      }
-
-      const parent = current.nodes[node.parentId];
-      if (!parent) {
-        return current;
-      }
-
-      const now = Date.now();
-      const nextStatus: Node["status"] = mode === "inline" ? "merged" : "linked";
-      const note =
-        mode === "inline"
-          ? `Merged inline from ${node.title}.`
-          : `Linked branch ${node.title}.`;
-
-      const parentMessage: Message = {
-        id: createId("msg"),
-        role: "system",
-        text: note,
-        ts: now,
-        meta: mode === "link" ? { linkNodeId: node.id } : undefined,
-      };
-
-      const updatedParent: Node = {
-        ...parent,
-        messages: [...parent.messages, parentMessage],
-        updatedAt: now,
-      };
-
-      const updatedNode: Node = {
-        ...node,
-        status: nextStatus,
-        merge: {
-          mode,
-          note,
-          targetNodeId: parent.id,
-        },
-        updatedAt: now,
-      };
-
-      return {
-        ...current,
-        nodes: {
-          ...current.nodes,
-          [parent.id]: updatedParent,
-          [node.id]: updatedNode,
-        },
-        updatedAt: now,
-      };
-    });
-  };
-
-  const handleTestConnection = async (draftSettings: typeof settings) => {
-    if (!OpenAICompatibleProvider.isConfigured(draftSettings)) {
+  const handleTestConnection = async (draftSettings: Workspace["settings"]) => {
+    const providerConfig = draftSettings.providerConfig;
+    if (!OpenAICompatibleProvider.isConfigured(providerConfig)) {
       return "Add a base URL and API key first.";
     }
 
     try {
       const response = await OpenAICompatibleProvider.generate({
+        systemPrompt: draftSettings.systemPrompt,
+        contextBlock: "Test connection.",
         messages: [{ role: "user", content: "ping" }],
-        settings: {
-          ...draftSettings,
-          maxTokens: Math.min(draftSettings.maxTokens || 32, 32),
+        options: {
+          ...providerConfig,
+          maxTokens: Math.min(providerConfig.maxTokens || 32, 32),
         },
       });
       const preview = response.text.slice(0, 80).replace(/\s+/g, " ");
@@ -375,20 +510,28 @@ export default function App() {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (/cors|failed to fetch/i.test(message)) {
-        return "Request failed. This may be a browser CORS issue. Try a proxy URL.";
+        return "Request failed. This may be a browser CORS issue.";
       }
       return `Error: ${message}`;
     }
   };
 
   const handleExport = () => {
-    const safeSettings = { ...settings, apiKey: "" };
+    const safeWorkspace: Workspace = {
+      ...workspace,
+      settings: {
+        ...workspace.settings,
+        providerConfig: {
+          ...workspace.settings.providerConfig,
+          apiKey: "",
+        },
+      },
+    };
     return JSON.stringify(
       {
         version: EXPORT_VERSION,
         exportedAt: Date.now(),
-        workspace,
-        settings: safeSettings,
+        workspace: safeWorkspace,
       },
       null,
       2
@@ -397,11 +540,7 @@ export default function App() {
 
   const handleImport = (raw: string) => {
     try {
-      const parsed = JSON.parse(raw) as {
-        workspace?: Workspace;
-        settings?: typeof settings;
-      };
-
+      const parsed = JSON.parse(raw) as { workspace?: Workspace };
       if (!parsed.workspace) {
         return { ok: false, error: "Missing workspace in import." };
       }
@@ -411,24 +550,48 @@ export default function App() {
         return { ok: false, error: "Invalid workspace data." };
       }
 
-      const nextWorkspace = {
+      const nextWorkspace: Workspace = {
         ...normalizedWorkspace,
-        updatedAt: Date.now(),
+        settings: {
+          ...normalizedWorkspace.settings,
+          providerConfig: {
+            ...normalizedWorkspace.settings.providerConfig,
+            apiKey: "",
+          },
+        },
       };
-      const nextSettings = sanitizeSettings({
-        ...(parsed.settings ?? DEFAULT_SETTINGS),
-        apiKey: "",
-      });
 
       setWorkspace(persistWorkspace(nextWorkspace));
-      setSettings(persistSettings(nextSettings));
-
+      setSelectedNodeId(null);
+      setScrollTargetId(null);
       return { ok: true };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       return { ok: false, error: message };
     }
   };
+
+  const handleSaveSettings = (settings: Workspace["settings"]) => {
+    updateWorkspace((current) => ({
+      ...current,
+      settings: {
+        ...settings,
+        providerConfig: { ...settings.providerConfig },
+        summarizationPolicy: { ...settings.summarizationPolicy },
+      },
+    }));
+  };
+
+  const sessionLabel =
+    activeSession?.kind === "branch" && activeSession.origin
+      ? `Branch from: ${truncateText(
+          workspace.nodes[activeSession.origin.sourceNodeId]?.question || "Source"
+        )}`
+      : "Trunk session";
+  const branchQuote =
+    activeSession?.kind === "branch" && activeSession.origin
+      ? activeSession.origin.quoteText
+      : "";
 
   return (
     <div className="app">
@@ -442,36 +605,53 @@ export default function App() {
           Settings
         </button>
         <TreeView
-          workspace={workspace}
-          activeNodeId={activeNode.id}
-          expandedNodeIds={workspace.ui.expandedNodeIds}
-          onSelectNode={selectNode}
-          onToggleExpand={toggleExpand}
+          trees={workspace.trees}
+          sessions={workspace.sessions}
+          nodes={workspace.nodes}
+          activeTreeId={workspace.activeTreeId}
+          activeSessionId={workspace.activeSessionId}
+          selectedNodeId={selectedNodeId}
+          onSelectTree={handleSelectTree}
+          onToggleTree={handleToggleTree}
+          onSelectSession={handleSelectSession}
+          onSelectNode={handleSelectNode}
         />
       </aside>
 
       <main className="main">
-        <ChatPane
-          node={activeNode}
-          breadcrumb={breadcrumb}
-          isGenerating={isGenerating}
-          quoteSourceTitle={quoteSourceTitle}
-          onOpenSource={() =>
-            activeNode.anchor ? selectNode(activeNode.anchor.sourceNodeId) : undefined
-          }
-          onSend={handleSend}
-          onCreateBranch={handleCreateBranch}
-          onMergeInline={() => handleMerge("inline")}
-          onMergeLink={() => handleMerge("link")}
-          onOpenNode={selectNode}
-        />
+        {activeTree && activeSession ? (
+          <ChatPane
+            nodes={activeSessionNodes}
+            treeTitle={activeTree.title}
+            sessionLabel={sessionLabel}
+            sessionKind={activeSession.kind}
+            branchQuote={branchQuote}
+            selectedNodeId={selectedNodeId}
+            scrollToNodeId={scrollTargetId}
+            errorMessage={errorMessage}
+            isGenerating={isGenerating}
+            onNewQuestion={handleNewQuestion}
+            onCreateBranch={handleCreateBranch}
+            onClearAll={handleClearAll}
+            onSend={handleSend}
+            onScrollComplete={() => setScrollTargetId(null)}
+          />
+        ) : (
+          <div className="empty-pane">
+            <h2>No active tree</h2>
+            <p>Start with a new top-level question.</p>
+            <button className="button-primary" type="button" onClick={handleNewQuestion}>
+              New Question
+            </button>
+          </div>
+        )}
       </main>
 
       <SettingsModal
         isOpen={isSettingsOpen}
-        settings={settings}
+        settings={workspace.settings}
         onClose={() => setIsSettingsOpen(false)}
-        onSave={updateSettings}
+        onSave={handleSaveSettings}
         onTest={handleTestConnection}
         onExport={handleExport}
         onImport={handleImport}

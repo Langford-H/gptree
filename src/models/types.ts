@@ -1,60 +1,65 @@
-export type Role = "user" | "assistant" | "system";
+export interface ProviderConfig {
+  baseUrl?: string;
+  apiKey?: string;
+  model?: string;
+  stream?: boolean;
+  maxTokens?: number;
+  temperature?: number;
+}
 
-export interface Message {
-  id: string;
-  role: Role;
-  text: string;
-  ts: number;
-  meta?: {
-    linkNodeId?: string;
+export interface WorkspaceSettings {
+  systemPrompt: string;
+  providerMode: "dummy" | "external";
+  providerConfig: ProviderConfig;
+  summarizationPolicy: {
+    maxContextNodes: number;
   };
 }
 
-export type NodeStatus = "draft" | "open" | "linked" | "merged";
-
-export interface Anchor {
-  sourceNodeId: string;
-  quoteText: string;
+export interface Tree {
+  id: string;
+  title: string;
+  trunkSessionId: string;
+  sessionIds: string[];
+  createdAt: number;
+  updatedAt: number;
+  collapsed: boolean;
 }
 
-export interface MergeInfo {
-  mode: "inline" | "link";
-  note?: string;
-  targetNodeId: string;
+export interface SessionOrigin {
+  sourceSessionId: string;
+  sourceNodeId: string;
+  quoteText: string;
+  createdAt: number;
+}
+
+export interface Session {
+  id: string;
+  treeId: string;
+  kind: "trunk" | "branch";
+  headNodeId: string | null;
+  tailNodeId: string | null;
+  origin: SessionOrigin | null;
+  createdAt: number;
+  updatedAt: number;
 }
 
 export interface Node {
   id: string;
-  parentId: string | null;
-  childrenIds: string[];
-  title: string;
-  status: NodeStatus;
-  anchor?: Anchor;
-  messages: Message[];
-  merge?: MergeInfo;
+  sessionId: string;
+  prevId: string | null;
+  nextId: string | null;
+  question: string;
+  answer: string | null;
   createdAt: number;
   updatedAt: number;
 }
 
 export interface Workspace {
-  workspaceId: string;
-  createdAt: number;
-  updatedAt: number;
-  rootNodeId: string;
+  trees: Record<string, Tree>;
+  sessions: Record<string, Session>;
   nodes: Record<string, Node>;
-  ui: {
-    activeNodeId: string;
-    expandedNodeIds: string[];
-  };
-}
-
-export interface ProviderSettings {
-  providerMode: "dummy" | "external";
-  baseUrl: string;
-  apiKey: string;
-  model: string;
-  stream: boolean;
-  maxTokens: number;
-  temperature?: number;
-  proxyUrl: string;
+  activeTreeId: string | null;
+  activeSessionId: string | null;
+  settings: WorkspaceSettings;
 }

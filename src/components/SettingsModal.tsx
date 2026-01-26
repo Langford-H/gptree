@@ -1,12 +1,12 @@
-﻿import React, { useEffect, useState } from "react";
-import { ProviderSettings } from "../models/types";
+import React, { useEffect, useState } from "react";
+import { WorkspaceSettings } from "../models/types";
 
 interface SettingsModalProps {
   isOpen: boolean;
-  settings: ProviderSettings;
+  settings: WorkspaceSettings;
   onClose: () => void;
-  onSave: (settings: ProviderSettings) => void;
-  onTest: (settings: ProviderSettings) => Promise<string>;
+  onSave: (settings: WorkspaceSettings) => void;
+  onTest: (settings: WorkspaceSettings) => Promise<string>;
   onExport: () => string;
   onImport: (raw: string) => { ok: boolean; error?: string };
 }
@@ -20,7 +20,7 @@ export default function SettingsModal({
   onExport,
   onImport,
 }: SettingsModalProps) {
-  const [draft, setDraft] = useState<ProviderSettings>(settings);
+  const [draft, setDraft] = useState<WorkspaceSettings>(settings);
   const [testStatus, setTestStatus] = useState<string | null>(null);
   const [exportText, setExportText] = useState("");
   const [importText, setImportText] = useState("");
@@ -40,8 +40,24 @@ export default function SettingsModal({
     return null;
   }
 
-  const update = (patch: Partial<ProviderSettings>) => {
+  const update = (patch: Partial<WorkspaceSettings>) => {
     setDraft((current) => ({ ...current, ...patch }));
+  };
+
+  const updateProviderConfig = (patch: Partial<WorkspaceSettings["providerConfig"]>) => {
+    setDraft((current) => ({
+      ...current,
+      providerConfig: { ...current.providerConfig, ...patch },
+    }));
+  };
+
+  const updateSummarization = (
+    patch: Partial<WorkspaceSettings["summarizationPolicy"]>
+  ) => {
+    setDraft((current) => ({
+      ...current,
+      summarizationPolicy: { ...current.summarizationPolicy, ...patch },
+    }));
   };
 
   const handleSave = () => {
@@ -84,13 +100,21 @@ export default function SettingsModal({
         </div>
 
         <div className="settings-row">
+          <label>System Prompt</label>
+          <textarea
+            value={draft.systemPrompt}
+            onChange={(event) => update({ systemPrompt: event.target.value })}
+            rows={4}
+          />
+        </div>
+
+        <div className="settings-row">
           <label>Provider Mode</label>
           <select
             value={draft.providerMode}
             onChange={(event) =>
               update({
-                providerMode:
-                  event.target.value === "external" ? "external" : "dummy",
+                providerMode: event.target.value === "external" ? "external" : "dummy",
               })
             }
           >
@@ -102,16 +126,8 @@ export default function SettingsModal({
         <div className="settings-row">
           <label>Base URL</label>
           <input
-            value={draft.baseUrl}
-            onChange={(event) => update({ baseUrl: event.target.value })}
-          />
-        </div>
-
-        <div className="settings-row">
-          <label>Proxy URL</label>
-          <input
-            value={draft.proxyUrl}
-            onChange={(event) => update({ proxyUrl: event.target.value })}
+            value={draft.providerConfig.baseUrl ?? ""}
+            onChange={(event) => updateProviderConfig({ baseUrl: event.target.value })}
           />
         </div>
 
@@ -119,24 +135,26 @@ export default function SettingsModal({
           <label>API Key</label>
           <input
             type="password"
-            value={draft.apiKey}
-            onChange={(event) => update({ apiKey: event.target.value })}
+            value={draft.providerConfig.apiKey ?? ""}
+            onChange={(event) => updateProviderConfig({ apiKey: event.target.value })}
           />
         </div>
 
         <div className="settings-row">
           <label>Model</label>
           <input
-            value={draft.model}
-            onChange={(event) => update({ model: event.target.value })}
+            value={draft.providerConfig.model ?? ""}
+            onChange={(event) => updateProviderConfig({ model: event.target.value })}
           />
         </div>
 
         <div className="settings-row">
           <label>Stream</label>
           <select
-            value={draft.stream ? "true" : "false"}
-            onChange={(event) => update({ stream: event.target.value === "true" })}
+            value={draft.providerConfig.stream ? "true" : "false"}
+            onChange={(event) =>
+              updateProviderConfig({ stream: event.target.value === "true" })
+            }
           >
             <option value="true">true</option>
             <option value="false">false</option>
@@ -147,9 +165,22 @@ export default function SettingsModal({
           <label>Max Tokens</label>
           <input
             type="number"
-            value={draft.maxTokens}
+            value={draft.providerConfig.maxTokens ?? 0}
             onChange={(event) =>
-              update({ maxTokens: Number(event.target.value) || 0 })
+              updateProviderConfig({ maxTokens: Number(event.target.value) || 0 })
+            }
+          />
+        </div>
+
+        <div className="settings-row">
+          <label>Context Nodes</label>
+          <input
+            type="number"
+            value={draft.summarizationPolicy.maxContextNodes}
+            onChange={(event) =>
+              updateSummarization({
+                maxContextNodes: Math.max(Number(event.target.value) || 0, 0),
+              })
             }
           />
         </div>
@@ -159,13 +190,11 @@ export default function SettingsModal({
           <input
             type="number"
             step="0.1"
-            value={draft.temperature ?? ""}
+            value={draft.providerConfig.temperature ?? ""}
             onChange={(event) =>
-              update({
+              updateProviderConfig({
                 temperature:
-                  event.target.value === ""
-                    ? undefined
-                    : Number(event.target.value),
+                  event.target.value === "" ? undefined : Number(event.target.value),
               })
             }
           />
@@ -175,17 +204,13 @@ export default function SettingsModal({
           <button className="button-primary" type="button" onClick={handleSave}>
             Save
           </button>
-          <button
-            className="button-secondary"
-            type="button"
-            onClick={handleTest}
-          >
+          <button className="button-secondary" type="button" onClick={handleTest}>
             Test Connection
           </button>
           <button
             className="button-secondary"
             type="button"
-            onClick={() => update({ apiKey: "" })}
+            onClick={() => updateProviderConfig({ apiKey: "" })}
           >
             Forget Key
           </button>
@@ -200,9 +225,7 @@ export default function SettingsModal({
           <button className="button-secondary" type="button" onClick={handleExport}>
             Export JSON
           </button>
-          {exportText ? (
-            <textarea readOnly value={exportText} rows={6} />
-          ) : null}
+          {exportText ? <textarea readOnly value={exportText} rows={6} /> : null}
           <textarea
             placeholder="Paste JSON to import"
             value={importText}
@@ -210,16 +233,10 @@ export default function SettingsModal({
             rows={6}
           />
           <div className="settings-actions">
-            <button
-              className="button-secondary"
-              type="button"
-              onClick={handleImport}
-            >
+            <button className="button-secondary" type="button" onClick={handleImport}>
               Import JSON
             </button>
-            {importStatus ? (
-              <div className="status-text">{importStatus}</div>
-            ) : null}
+            {importStatus ? <div className="status-text">{importStatus}</div> : null}
           </div>
         </div>
       </div>

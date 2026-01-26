@@ -1,25 +1,54 @@
-﻿import { ProviderSettings } from "../models/types";
-import { AIProvider, GenerateInput, PromptMessage } from "./AIProvider";
+import { AIProvider, ProviderMessage } from "./AIProvider";
+import { ProviderConfig } from "../models/types";
 
-function getBaseUrl(settings: ProviderSettings) {
-  const proxy = settings.proxyUrl.trim();
-  const base = proxy.length > 0 ? proxy : settings.baseUrl.trim();
+type PromptMessage = {
+  role: "user" | "assistant" | "system";
+  content: string;
+};
+
+const DEFAULT_BASE_URL = "https://api-inference.modelscope.cn/v1";
+const DEFAULT_MODEL = "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B";
+
+function getBaseUrl(config: ProviderConfig) {
+  const base = (config.baseUrl || DEFAULT_BASE_URL).trim();
   return base.replace(/\/+$/, "");
 }
 
-function buildPayload(settings: ProviderSettings, messages: PromptMessage[]) {
+function buildPromptMessages(
+  systemPrompt: string,
+  contextBlock: string,
+  messages: ProviderMessage[]
+): PromptMessage[] {
+  const promptMessages: PromptMessage[] = [];
+  if (systemPrompt.trim().length > 0) {
+    promptMessages.push({ role: "system", content: systemPrompt });
+  }
+  if (contextBlock.trim().length > 0) {
+    promptMessages.push({ role: "system", content: contextBlock });
+  }
+  for (const message of messages) {
+    promptMessages.push({ role: message.role, content: message.content });
+  }
+  return promptMessages;
+}
+
+function buildPayload(
+  config: ProviderConfig,
+  promptMessages: PromptMessage[],
+  stream: boolean
+) {
   const payload: Record<string, unknown> = {
-    model: settings.model,
-    messages,
-    stream: settings.stream,
+    model: config.model || DEFAULT_MODEL,
+    messages: promptMessages,
+    stream,
   };
 
-  if (settings.maxTokens > 0) {
-    payload.max_tokens = settings.maxTokens;
+  if (typeof config.maxTokens === "number" && config.maxTokens > 0) {
+    payload.max_tokens = config.maxTokens;
   }
 
-  if (typeof settings.temperature === "number") {
-    payload.temperature = settings.temperature;
+  if (typeof config.temperature === "number") {
+    payload.temperature = config.temperature;
   }
 
   return payload;
@@ -80,11 +109,12 @@ async function readStream(response: Response, onToken?: (chunk: string) => void)
       const choice = (payload as any).choices?.[0];
       const deltaContent = choice?.delta?.content;
       const messageContent = choice?.message?.content;
-      const chunk = typeof deltaContent === "string"
-        ? deltaContent
-        : output.length === 0 && typeof messageContent === "string"
-          ? messageContent
-          : "";
+      const chunk =
+        typeof deltaContent === "string"
+          ? deltaContent
+          : output.length === 0 && typeof messageContent === "string"
+            ? messageContent
+            : "";
 
       if (chunk) {
         output += chunk;
@@ -96,10 +126,18 @@ async function readStream(response: Response, onToken?: (chunk: string) => void)
   return output;
 }
 
-async function requestCompletion(input: GenerateInput, allowFallback: boolean) {
-  const { settings, messages, onToken, signal } = input;
-  const baseUrl = getBaseUrl(settings);
-  const apiKey = settings.apiKey.trim();
+async function requestCompletion(options: {
+  config: ProviderConfig;
+  promptMessages: PromptMessage[];
+  onToken?: (chunk: string) => void;
+  signal?: AbortSignal;
+  allowFallback: boolean;
+}) {
+  const { config, promptMessages, onToken, signal, allowFallback } = options;
+  const baseUrl = getBaseUrl(config);
+  const apiKey = (config.apiKey || "").trim();
+  const stream = config.stream === true;
+
   if (!baseUrl) {
     throw new Error("Base URL is missing.");
   }
@@ -110,7 +148,7 @@ async function requestCompletion(input: GenerateInput, allowFallback: boolean) {
       "Content-Type": "application/json",
       Authorization: `Bearer ${apiKey}`,
     },
-    body: JSON.stringify(buildPayload(settings, messages)),
+    body: JSON.stringify(buildPayload(config, promptMessages, stream)),
     signal,
   });
 
@@ -119,7 +157,7 @@ async function requestCompletion(input: GenerateInput, allowFallback: boolean) {
     throw new Error(message);
   }
 
-  if (settings.stream) {
+  if (stream) {
     try {
       const text = await readStream(response, onToken);
       if (text) {
@@ -132,15 +170,12 @@ async function requestCompletion(input: GenerateInput, allowFallback: boolean) {
     }
 
     if (allowFallback) {
-      const fallbackSettings = { ...settings, stream: false };
-      return requestCompletion(
-        {
-          ...input,
-          settings: fallbackSettings,
-          onToken: undefined,
-        },
-        false
-      );
+      const fallbackConfig = { ...config, stream: false };
+      return requestCompletion({
+        config: fallbackConfig,
+        promptMessages,
+        allowFallback: false,
+      });
     }
   }
 
@@ -154,10 +189,19 @@ async function requestCompletion(input: GenerateInput, allowFallback: boolean) {
 }
 
 export const OpenAICompatibleProvider: AIProvider = {
-  name: "OpenAICompatible",
-  isConfigured: (settings) => {
-    const baseUrl = getBaseUrl(settings);
-    return baseUrl.length > 0 && settings.apiKey.trim().length > 0;
+  name: "ExternalProvider",
+  isConfigured: (config) => {
+    const baseUrl = getBaseUrl(config);
+    return baseUrl.length > 0 && (config.apiKey || "").trim().length > 0;
   },
-  generate: (input) => requestCompletion(input, true),
+  generate: async ({ systemPrompt, contextBlock, messages, options, onToken, signal }) => {
+    const promptMessages = buildPromptMessages(systemPrompt, contextBlock, messages);
+    return requestCompletion({
+      config: options,
+      promptMessages,
+      onToken,
+      signal,
+      allowFallback: true,
+    });
+  },
 };

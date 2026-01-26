@@ -71,7 +71,7 @@ Acceptance: Merge actions always create visible artifacts in parent node.
 - Change: Tree label updates to truncated question.
 - Test: Create node → send first user message → tree label updates.
 
-Status: [TODO]
+Status: [DONE]
 
 ---
 
