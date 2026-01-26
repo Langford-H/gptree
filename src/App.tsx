@@ -15,9 +15,11 @@ import {
   normalizeWorkspace,
   saveWorkspace,
 } from "./store/workspaceStore";
+import { BRANCH_INSTRUCTION, BRANCH_SUMMARIZER_PROMPT } from "./constants/prompts";
 
-const EXPORT_VERSION = "0.2.1";
-const BRANCH_EXCERPT_LIMIT = 480;
+const EXPORT_VERSION = "0.2.2";
+const BRANCH_SUMMARY_CONTEXT_NODES = 4;
+const MAX_HISTORY_NODES = 6;
 
 function truncateText(text: string, max = 60) {
   const trimmed = text.trim();
@@ -71,15 +73,41 @@ function buildTrunkContext(tree: Tree, nodeCount: number) {
   return [`Tree: ${tree.id}`, `Node count: ${nodeCount}`].join("\n");
 }
 
-function buildBranchContext(origin: { quoteText: string; excerpt: string }, includeSummary: boolean) {
+function buildBranchContext(origin: { quoteText: string; originSummary: string }) {
   const lines = ["Branch session: true", "Quoted span:", "<<<", origin.quoteText, ">>>"];
-  if (origin.excerpt) {
-    lines.push("", "Origin context excerpt:", "<<<", origin.excerpt, ">>>");
-  }
-  if (includeSummary) {
-    lines.push("", "Instruction: Provide a 5-8 line summary of origin context before answering.");
+  lines.push("", "Origin summary:", "<<<", origin.originSummary, ">>>");
+  return lines.join("\n");
+}
+
+function buildSummarizerContext(options: {
+  quoteText: string;
+  sourceNode: Node;
+  precedingNodes: Node[];
+}) {
+  const lines = ["Quoted span:", "<<<", options.quoteText, ">>>"];
+  lines.push("", "Source node question:", "<<<", options.sourceNode.question, ">>>");
+  lines.push("", "Source node answer:", "<<<", options.sourceNode.answer || "", ">>>");
+  if (options.precedingNodes.length > 0) {
+    lines.push("", "Recent preceding nodes:");
+    options.precedingNodes.forEach((node, index) => {
+      lines.push(
+        `- Q${index + 1}: ${node.question}`,
+        `  A${index + 1}: ${node.answer || ""}`
+      );
+    });
   }
   return lines.join("\n");
+}
+
+function computeColorKey(sessionId: string, paletteLength: number) {
+  if (paletteLength <= 0) {
+    return 0;
+  }
+  let hash = 0;
+  for (let i = 0; i < sessionId.length; i += 1) {
+    hash = (hash * 31 + sessionId.charCodeAt(i)) % 9973;
+  }
+  return Math.abs(hash) % paletteLength;
 }
 
 export default function App() {
@@ -258,7 +286,22 @@ export default function App() {
       treeId: activeTree.id,
       kind: "branch",
       origin,
+      branchSeed: {
+        sourceTreeId: activeTree.id,
+        sourceSessionId: sourceNode.sessionId,
+        sourceNodeId,
+        quoteText,
+        originSummary: "Summarizing origin context...",
+        createdAt: Date.now(),
+      },
+      colorKey: 0,
     });
+    const paletteLength = workspace.settings.uiTheme.palette.length;
+    const branchColorKey = computeColorKey(branchSession.id, paletteLength);
+    const seededBranchSession: Session = {
+      ...branchSession,
+      colorKey: branchColorKey,
+    };
 
     updateWorkspace((current) => {
       const tree = current.trees[activeTree.id];
@@ -269,7 +312,7 @@ export default function App() {
         ...current,
         sessions: {
           ...current.sessions,
-          [branchSession.id]: branchSession,
+          [branchSession.id]: seededBranchSession,
         },
         trees: {
           ...current.trees,
@@ -284,6 +327,83 @@ export default function App() {
     });
     setSelectedNodeId(null);
     setScrollTargetId(null);
+
+    let provider =
+      workspace.settings.providerMode === "external"
+        ? OpenAICompatibleProvider
+        : DummyProvider;
+    if (
+      workspace.settings.providerMode === "external" &&
+      !provider.isConfigured(workspace.settings.providerConfig)
+    ) {
+      provider = DummyProvider;
+    }
+    const sourceSession = workspace.sessions[sourceNode.sessionId];
+    const sourceSessionNodes = sourceSession
+      ? getSessionNodes(sourceSession, workspace.nodes)
+      : [];
+    const sourceIndex = sourceSessionNodes.findIndex((node) => node.id === sourceNodeId);
+    const startIndex = Math.max(0, sourceIndex - BRANCH_SUMMARY_CONTEXT_NODES);
+    const precedingNodes =
+      sourceIndex >= 0 ? sourceSessionNodes.slice(startIndex, sourceIndex) : [];
+    const summarizerContext = buildSummarizerContext({
+      quoteText,
+      sourceNode,
+      precedingNodes,
+    });
+
+    const summarizerMessages = [{ role: "user", content: "Summarize origin context." }];
+
+    provider
+      .generate({
+        systemPrompt: BRANCH_SUMMARIZER_PROMPT,
+        contextBlock: summarizerContext,
+        messages: summarizerMessages,
+        options: workspace.settings.providerConfig,
+      })
+      .then((response) => {
+        updateWorkspace((current) => {
+          const session = current.sessions[branchSession.id];
+          if (!session || !session.branchSeed) {
+            return current;
+          }
+          return {
+            ...current,
+            sessions: {
+              ...current.sessions,
+              [session.id]: {
+                ...session,
+                branchSeed: {
+                  ...session.branchSeed,
+                  originSummary: response.text,
+                },
+              },
+            },
+          };
+        });
+      })
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        updateWorkspace((current) => {
+          const session = current.sessions[branchSession.id];
+          if (!session || !session.branchSeed) {
+            return current;
+          }
+          return {
+            ...current,
+            sessions: {
+              ...current.sessions,
+              [session.id]: {
+                ...session,
+                branchSeed: {
+                  ...session.branchSeed,
+                  originSummary: `Summary unavailable: ${message}`,
+                },
+              },
+            },
+          };
+        });
+      });
   };
 
   const handleSend = async (text: string) => {
@@ -291,7 +411,6 @@ export default function App() {
       return;
     }
     const now = Date.now();
-    const maxContextNodes = workspace.settings.summarizationPolicy.maxContextNodes;
     const historyNodes = activeSessionNodes;
     const isFirstNode = !activeSession.headNodeId;
     const newNode = createNode({
@@ -386,24 +505,28 @@ export default function App() {
       return;
     }
 
-    const promptMessages = buildHistoryMessages(historyNodes, maxContextNodes);
+    const promptMessages = buildHistoryMessages(historyNodes, MAX_HISTORY_NODES);
     promptMessages.push({ role: "user", content: text });
 
-    let systemPrompt = workspace.settings.systemPrompt;
+    let systemPrompt = workspace.settings.rootSeed;
     let contextBlock = buildTrunkContext(
       activeTree,
       Object.values(workspace.nodes).filter((node) => node.sessionId === activeSession.id).length +
         1
     );
 
-    if (activeSession.kind === "branch" && activeSession.origin) {
-      const sourceNode = workspace.nodes[activeSession.origin.sourceNodeId];
-      const excerpt = sourceNode?.answer
-        ? truncateText(sourceNode.answer, BRANCH_EXCERPT_LIMIT)
-        : "";
-      contextBlock = buildBranchContext({ quoteText: activeSession.origin.quoteText, excerpt }, isFirstNode);
-      if (isFirstNode) {
-        systemPrompt = `${systemPrompt}\n\nBranch instruction: This is a branch discussion tied to a quoted span. Summarize origin context (5-8 lines) before answering.`;
+    if (activeSession.kind === "branch" && activeSession.branchSeed) {
+      const originSummary = activeSession.branchSeed.originSummary;
+      contextBlock = buildBranchContext({
+        quoteText: activeSession.branchSeed.quoteText,
+        originSummary,
+      });
+      systemPrompt = `${systemPrompt}\n\n${BRANCH_INSTRUCTION}`;
+      if (isFirstNode && originSummary.trim().length === 0) {
+        contextBlock = buildBranchContext({
+          quoteText: activeSession.branchSeed.quoteText,
+          originSummary: "Origin summary pending.",
+        });
       }
     }
 
@@ -497,7 +620,7 @@ export default function App() {
 
     try {
       const response = await OpenAICompatibleProvider.generate({
-        systemPrompt: draftSettings.systemPrompt,
+        systemPrompt: draftSettings.rootSeed,
         contextBlock: "Test connection.",
         messages: [{ role: "user", content: "ping" }],
         options: {
@@ -577,7 +700,10 @@ export default function App() {
       settings: {
         ...settings,
         providerConfig: { ...settings.providerConfig },
-        summarizationPolicy: { ...settings.summarizationPolicy },
+        uiTheme: {
+          baseFontSize: settings.uiTheme.baseFontSize,
+          palette: [...settings.uiTheme.palette],
+        },
       },
     }));
   };
@@ -589,12 +715,12 @@ export default function App() {
         )}`
       : "Trunk session";
   const branchQuote =
-    activeSession?.kind === "branch" && activeSession.origin
-      ? activeSession.origin.quoteText
+    activeSession?.kind === "branch" && activeSession.branchSeed
+      ? activeSession.branchSeed.quoteText
       : "";
 
   return (
-    <div className="app">
+    <div className="app" style={{ fontSize: `${workspace.settings.uiTheme.baseFontSize}px` }}>
       <aside className="sidebar">
         <h1>GPTree</h1>
         <button
@@ -611,6 +737,7 @@ export default function App() {
           activeTreeId={workspace.activeTreeId}
           activeSessionId={workspace.activeSessionId}
           selectedNodeId={selectedNodeId}
+          palette={workspace.settings.uiTheme.palette}
           onSelectTree={handleSelectTree}
           onToggleTree={handleToggleTree}
           onSelectSession={handleSelectSession}
@@ -650,6 +777,12 @@ export default function App() {
       <SettingsModal
         isOpen={isSettingsOpen}
         settings={workspace.settings}
+        branchSeeds={Object.values(workspace.sessions)
+          .filter((session) => session.branchSeed)
+          .map((session) => ({
+            sessionId: session.id,
+            seed: session.branchSeed!,
+          }))}
         onClose={() => setIsSettingsOpen(false)}
         onSave={handleSaveSettings}
         onTest={handleTestConnection}

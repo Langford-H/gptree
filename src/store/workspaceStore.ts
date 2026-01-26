@@ -1,4 +1,5 @@
 import {
+  BranchSeed,
   Node,
   Session,
   SessionOrigin,
@@ -10,13 +11,17 @@ import { createId } from "../utils/id";
 
 const WORKSPACE_STORAGE_KEY = "gptree_workspace_v021_sessions";
 
-export const DEFAULT_SYSTEM_PROMPT =
-  "You are an assistant helping manage a tree-structured Q&A workflow.\n" +
-  "In each session, answer the user's question directly.\n" +
-  "If this is a branch session, focus on the quoted span and the summarized origin context.";
+export const DEFAULT_ROOT_SEED =
+  "You are an assistant helping manage a tree-structured Q&A workflow (GPTree).\n" +
+  "Rules:\n" +
+  "- Treat each user message as a commit node.\n" +
+  "- Be concise and technical.\n" +
+  "- Do not hallucinate missing context.\n" +
+  "- Ask at most one clarifying question if needed.\n" +
+  "- Prioritize branch seed context in branch sessions.";
 
 export const DEFAULT_SETTINGS: WorkspaceSettings = {
-  systemPrompt: DEFAULT_SYSTEM_PROMPT,
+  rootSeed: DEFAULT_ROOT_SEED,
   providerMode: "dummy",
   providerConfig: {
     baseUrl: "https://api-inference.modelscope.cn/v1",
@@ -26,8 +31,9 @@ export const DEFAULT_SETTINGS: WorkspaceSettings = {
     maxTokens: 512,
     temperature: undefined,
   },
-  summarizationPolicy: {
-    maxContextNodes: 6,
+  uiTheme: {
+    baseFontSize: 17,
+    palette: ["#5b9bff", "#35c3a9", "#f6b26b", "#e06666", "#8e7cc3", "#6fa8dc"],
   },
 };
 
@@ -53,6 +59,8 @@ export function createSession(options: {
   treeId: string;
   kind: "trunk" | "branch";
   origin?: SessionOrigin | null;
+  branchSeed?: BranchSeed | null;
+  colorKey?: number;
 }): Session {
   const now = Date.now();
   return {
@@ -62,6 +70,8 @@ export function createSession(options: {
     headNodeId: null,
     tailNodeId: null,
     origin: options.origin ?? null,
+    branchSeed: options.branchSeed ?? null,
+    colorKey: typeof options.colorKey === "number" ? options.colorKey : 0,
     createdAt: now,
     updatedAt: now,
   };
@@ -69,7 +79,11 @@ export function createSession(options: {
 
 export function createTree(): { tree: Tree; session: Session } {
   const now = Date.now();
-  const trunkSession = createSession({ treeId: createId("tree"), kind: "trunk" });
+  const trunkSession = createSession({
+    treeId: createId("tree"),
+    kind: "trunk",
+    colorKey: 0,
+  });
   const tree: Tree = {
     id: trunkSession.treeId,
     title: "Untitled tree",
@@ -92,7 +106,10 @@ export function createWorkspace(): Workspace {
     settings: {
       ...DEFAULT_SETTINGS,
       providerConfig: { ...DEFAULT_SETTINGS.providerConfig },
-      summarizationPolicy: { ...DEFAULT_SETTINGS.summarizationPolicy },
+      uiTheme: {
+        baseFontSize: DEFAULT_SETTINGS.uiTheme.baseFontSize,
+        palette: [...DEFAULT_SETTINGS.uiTheme.palette],
+      },
     },
   };
 }
@@ -102,15 +119,18 @@ function coerceSettings(value: unknown): WorkspaceSettings {
     return {
       ...DEFAULT_SETTINGS,
       providerConfig: { ...DEFAULT_SETTINGS.providerConfig },
-      summarizationPolicy: { ...DEFAULT_SETTINGS.summarizationPolicy },
+      uiTheme: {
+        baseFontSize: DEFAULT_SETTINGS.uiTheme.baseFontSize,
+        palette: [...DEFAULT_SETTINGS.uiTheme.palette],
+      },
     };
   }
   const raw = value as WorkspaceSettings;
   return {
-    systemPrompt:
-      typeof raw.systemPrompt === "string" && raw.systemPrompt.trim().length > 0
-        ? raw.systemPrompt
-        : DEFAULT_SYSTEM_PROMPT,
+    rootSeed:
+      typeof raw.rootSeed === "string" && raw.rootSeed.trim().length > 0
+        ? raw.rootSeed
+        : DEFAULT_ROOT_SEED,
     providerMode: raw.providerMode === "external" ? "external" : "dummy",
     providerConfig: {
       ...DEFAULT_SETTINGS.providerConfig,
@@ -120,11 +140,15 @@ function coerceSettings(value: unknown): WorkspaceSettings {
           ? raw.providerConfig.apiKey
           : "",
     },
-    summarizationPolicy: {
-      maxContextNodes:
-        raw.summarizationPolicy && typeof raw.summarizationPolicy.maxContextNodes === "number"
-          ? raw.summarizationPolicy.maxContextNodes
-          : DEFAULT_SETTINGS.summarizationPolicy.maxContextNodes,
+    uiTheme: {
+      baseFontSize:
+        raw.uiTheme && typeof raw.uiTheme.baseFontSize === "number"
+          ? raw.uiTheme.baseFontSize
+          : DEFAULT_SETTINGS.uiTheme.baseFontSize,
+      palette:
+        raw.uiTheme && Array.isArray(raw.uiTheme.palette) && raw.uiTheme.palette.length > 0
+          ? raw.uiTheme.palette.filter((color): color is string => typeof color === "string")
+          : [...DEFAULT_SETTINGS.uiTheme.palette],
     },
   };
 }
@@ -170,6 +194,29 @@ function normalizeSessionOrigin(value: unknown): SessionOrigin | null {
   };
 }
 
+function normalizeBranchSeed(value: unknown): BranchSeed | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const seed = value as BranchSeed;
+  if (
+    typeof seed.sourceTreeId !== "string" ||
+    typeof seed.sourceSessionId !== "string" ||
+    typeof seed.sourceNodeId !== "string" ||
+    typeof seed.quoteText !== "string"
+  ) {
+    return null;
+  }
+  return {
+    sourceTreeId: seed.sourceTreeId,
+    sourceSessionId: seed.sourceSessionId,
+    sourceNodeId: seed.sourceNodeId,
+    quoteText: seed.quoteText,
+    originSummary: typeof seed.originSummary === "string" ? seed.originSummary : "",
+    createdAt: typeof seed.createdAt === "number" ? seed.createdAt : Date.now(),
+  };
+}
+
 function normalizeSession(value: unknown): Session | null {
   if (!value || typeof value !== "object") {
     return null;
@@ -185,6 +232,8 @@ function normalizeSession(value: unknown): Session | null {
     headNodeId: typeof session.headNodeId === "string" ? session.headNodeId : null,
     tailNodeId: typeof session.tailNodeId === "string" ? session.tailNodeId : null,
     origin: normalizeSessionOrigin(session.origin),
+    branchSeed: normalizeBranchSeed(session.branchSeed),
+    colorKey: typeof session.colorKey === "number" ? session.colorKey : 0,
     createdAt: typeof session.createdAt === "number" ? session.createdAt : Date.now(),
     updatedAt: typeof session.updatedAt === "number" ? session.updatedAt : Date.now(),
   };

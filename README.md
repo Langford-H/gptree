@@ -52,6 +52,10 @@ in branch sessions.
 Fields: - sourceTreeId - sourceSessionId - sourceNodeId - quoteText -
 originSummary - createdAt
 
+Settings UI:
+- Root Seed is editable in Settings.
+- Branch Seeds are listed read-only (all branch sessions), including source IDs, quoteText, originSummary, and sessionId.
+
 ------------------------------------------------------------------------
 
 ## 4) C3-True Branch Seed Summarization

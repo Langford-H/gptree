@@ -56,6 +56,7 @@ export default function ChatPane({
   const selectionRef = useRef<{ text: string; nodeId: string } | null>(null);
   const [composerText, setComposerText] = useState("");
   const [selectionError, setSelectionError] = useState("");
+  const [selectionHint, setSelectionHint] = useState("");
 
   useEffect(() => {
     if (!scrollToNodeId || !transcriptRef.current) {
@@ -83,20 +84,24 @@ export default function ChatPane({
     const selection = window.getSelection();
     if (!selection || selection.isCollapsed) {
       selectionRef.current = null;
+      setSelectionHint("");
       return;
     }
     const quoteText = selection.toString().trim();
     if (!quoteText) {
       selectionRef.current = null;
+      setSelectionHint("");
       return;
     }
     const nodeId = findNodeIdFromSelection(selection);
     if (!nodeId) {
       selectionRef.current = null;
+      setSelectionHint("");
       return;
     }
     selectionRef.current = { text: quoteText, nodeId };
     setSelectionError("");
+    setSelectionHint("Quote selected. Click Create Branch from Quote.");
   };
 
   const handleCreateBranch = () => {
@@ -107,6 +112,7 @@ export default function ChatPane({
     }
     setSelectionError("");
     selectionRef.current = null;
+    setSelectionHint("");
     onCreateBranch(selection.text, selection.nodeId);
   };
 
@@ -115,13 +121,21 @@ export default function ChatPane({
       <div className="pane-header">
         <div>
           <h2 className="pane-title">{treeTitle}</h2>
-          <div className="breadcrumb">{sessionLabel}</div>
+          <div className="breadcrumb">
+            <span className="session-badge">{sessionKind === "trunk" ? "TRUNK" : "BRANCH"}</span>
+            <span>{sessionLabel}</span>
+          </div>
         </div>
         <div className="pane-actions">
           <button className="button-secondary" type="button" onClick={onNewQuestion}>
             New Question
           </button>
-          <button className="button-secondary" type="button" onClick={handleCreateBranch}>
+          <button
+            className="button-secondary"
+            type="button"
+            onClick={handleCreateBranch}
+            title="Select text in the transcript to create a branch session."
+          >
             Create Branch from Quote
           </button>
           <button className="button-secondary" type="button" onClick={onClearAll}>
@@ -168,6 +182,7 @@ export default function ChatPane({
       </div>
 
       {selectionError ? <div className="selection-error">{selectionError}</div> : null}
+      {selectionHint ? <div className="selection-hint">{selectionHint}</div> : null}
       {errorMessage ? <div className="error-banner">{errorMessage}</div> : null}
 
       <div className="composer">

@@ -96,6 +96,36 @@ button {
   background: #2a2f38;
 }
 
+.tree-band {
+  width: 6px;
+  height: 20px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.commit-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  flex-shrink: 0;
+}
+
+.commit-dot.filled {
+  background: currentColor;
+}
+
+.commit-dot.pending {
+  background: transparent;
+}
+
+.tree-connector {
+  width: 10px;
+  height: 1px;
+  background: #3a3f4b;
+  flex-shrink: 0;
+}
+
 .tree-label,
 .tree-branch-title {
   background: transparent;
@@ -105,6 +135,19 @@ button {
   text-align: left;
   flex: 1;
   padding: 0;
+}
+
+.tree-kind {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  background: #2f3640;
+  color: #f5f6fa;
+  font-size: 10px;
+  margin-right: 6px;
 }
 
 .main {
@@ -151,6 +194,21 @@ button {
 .breadcrumb {
   font-size: 13px;
   color: #555;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.session-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: #e9ecef;
+  font-size: 11px;
+  font-weight: 600;
+  color: #1f1f1f;
 }
 
 .pane-actions {
@@ -179,8 +237,8 @@ button {
 .chat-transcript {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 8px 0;
+  gap: 6px;
+  padding: 8px 10px;
   max-height: 520px;
   overflow-y: auto;
 }
@@ -193,7 +251,7 @@ button {
 .message-group {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 2px;
 }
 
 .message-group.selected .message-user,
@@ -202,10 +260,13 @@ button {
 }
 
 .message {
-  padding: 10px 12px;
+  padding: 10px 10px;
   border-radius: 12px;
-  font-size: 14px;
+  font-size: 17px;
+  max-width: 50%;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   line-height: 1.4;
 }
 
@@ -242,6 +303,11 @@ button {
 
 .selection-error {
   color: #b42318;
+  font-size: 12px;
+}
+
+.selection-hint {
+  color: #1d4ed8;
   font-size: 12px;
 }
 
@@ -292,6 +358,56 @@ button {
   border-radius: 6px;
   border: 1px solid #c8ccd4;
   font-family: inherit;
+}
+
+.settings-branch-seed {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12px;
+  background: #f7f7f7;
+  padding: 10px;
+  border-radius: 8px;
+}
+
+.settings-branch-seeds {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.seed-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.seed-label {
+  font-weight: 600;
+  color: #1f1f1f;
+}
+
+.seed-value {
+  color: #3a3f4b;
+  word-break: break-all;
+}
+
+.seed-block {
+  margin-top: 4px;
+}
+
+.seed-pre {
+  margin: 0;
+  white-space: pre-wrap;
+  background: #fff;
+  padding: 8px;
+  border-radius: 6px;
+  border: 1px solid #e0e0e0;
+}
+
+.seed-empty {
+  font-size: 12px;
+  color: #555;
 }
 
 .settings-actions {

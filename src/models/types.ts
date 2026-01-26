@@ -8,11 +8,12 @@ export interface ProviderConfig {
 }
 
 export interface WorkspaceSettings {
-  systemPrompt: string;
+  rootSeed: string;
   providerMode: "dummy" | "external";
   providerConfig: ProviderConfig;
-  summarizationPolicy: {
-    maxContextNodes: number;
+  uiTheme: {
+    baseFontSize: number;
+    palette: string[];
   };
 }
 
@@ -40,6 +41,8 @@ export interface Session {
   headNodeId: string | null;
   tailNodeId: string | null;
   origin: SessionOrigin | null;
+  branchSeed: BranchSeed | null;
+  colorKey: number;
   createdAt: number;
   updatedAt: number;
 }
@@ -53,6 +56,15 @@ export interface Node {
   answer: string | null;
   createdAt: number;
   updatedAt: number;
+}
+
+export interface BranchSeed {
+  sourceTreeId: string;
+  sourceSessionId: string;
+  sourceNodeId: string;
+  quoteText: string;
+  originSummary: string;
+  createdAt: number;
 }
 
 export interface Workspace {

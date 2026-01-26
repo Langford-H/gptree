@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from "react";
-import { WorkspaceSettings } from "../models/types";
+import { BranchSeed, WorkspaceSettings } from "../models/types";
 
 interface SettingsModalProps {
   isOpen: boolean;
   settings: WorkspaceSettings;
+  branchSeeds: Array<{ sessionId: string; seed: BranchSeed }>;
   onClose: () => void;
   onSave: (settings: WorkspaceSettings) => void;
   onTest: (settings: WorkspaceSettings) => Promise<string>;
@@ -14,6 +15,7 @@ interface SettingsModalProps {
 export default function SettingsModal({
   isOpen,
   settings,
+  branchSeeds,
   onClose,
   onSave,
   onTest,
@@ -48,15 +50,6 @@ export default function SettingsModal({
     setDraft((current) => ({
       ...current,
       providerConfig: { ...current.providerConfig, ...patch },
-    }));
-  };
-
-  const updateSummarization = (
-    patch: Partial<WorkspaceSettings["summarizationPolicy"]>
-  ) => {
-    setDraft((current) => ({
-      ...current,
-      summarizationPolicy: { ...current.summarizationPolicy, ...patch },
     }));
   };
 
@@ -100,12 +93,56 @@ export default function SettingsModal({
         </div>
 
         <div className="settings-row">
-          <label>System Prompt</label>
+          <label>Root Seed</label>
           <textarea
-            value={draft.systemPrompt}
-            onChange={(event) => update({ systemPrompt: event.target.value })}
-            rows={4}
+            value={draft.rootSeed}
+            onChange={(event) => update({ rootSeed: event.target.value })}
+            rows={5}
           />
+        </div>
+
+        <div className="settings-row">
+          <label>Branch Seeds</label>
+          <div className="settings-branch-seeds">
+            {branchSeeds.length > 0 ? (
+              branchSeeds.map(({ sessionId, seed }) => (
+                <div className="settings-branch-seed" key={sessionId}>
+                  <div className="seed-row">
+                    <span className="seed-label">sessionId</span>
+                    <span className="seed-value">{sessionId}</span>
+                  </div>
+                  <div className="seed-row">
+                    <span className="seed-label">sourceTreeId</span>
+                    <span className="seed-value">{seed.sourceTreeId}</span>
+                  </div>
+                  <div className="seed-row">
+                    <span className="seed-label">sourceSessionId</span>
+                    <span className="seed-value">{seed.sourceSessionId}</span>
+                  </div>
+                  <div className="seed-row">
+                    <span className="seed-label">sourceNodeId</span>
+                    <span className="seed-value">{seed.sourceNodeId}</span>
+                  </div>
+                  <div className="seed-row">
+                    <span className="seed-label">createdAt</span>
+                    <span className="seed-value">
+                      {new Date(seed.createdAt).toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="seed-row seed-block">
+                    <span className="seed-label">quoteText</span>
+                    <pre className="seed-pre">{seed.quoteText}</pre>
+                  </div>
+                  <div className="seed-row seed-block">
+                    <span className="seed-label">originSummary</span>
+                    <pre className="seed-pre">{seed.originSummary}</pre>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="seed-empty">No branch seeds available.</div>
+            )}
+          </div>
         </div>
 
         <div className="settings-row">
@@ -173,19 +210,6 @@ export default function SettingsModal({
         </div>
 
         <div className="settings-row">
-          <label>Context Nodes</label>
-          <input
-            type="number"
-            value={draft.summarizationPolicy.maxContextNodes}
-            onChange={(event) =>
-              updateSummarization({
-                maxContextNodes: Math.max(Number(event.target.value) || 0, 0),
-              })
-            }
-          />
-        </div>
-
-        <div className="settings-row">
           <label>Temperature</label>
           <input
             type="number"
@@ -195,6 +219,40 @@ export default function SettingsModal({
               updateProviderConfig({
                 temperature:
                   event.target.value === "" ? undefined : Number(event.target.value),
+              })
+            }
+          />
+        </div>
+
+        <div className="settings-row">
+          <label>Base Font Size</label>
+          <input
+            type="number"
+            value={draft.uiTheme.baseFontSize}
+            onChange={(event) =>
+              update({
+                uiTheme: {
+                  ...draft.uiTheme,
+                  baseFontSize: Math.max(Number(event.target.value) || 12, 12),
+                },
+              })
+            }
+          />
+        </div>
+
+        <div className="settings-row">
+          <label>Palette</label>
+          <input
+            value={draft.uiTheme.palette.join(", ")}
+            onChange={(event) =>
+              update({
+                uiTheme: {
+                  ...draft.uiTheme,
+                  palette: event.target.value
+                    .split(",")
+                    .map((entry) => entry.trim())
+                    .filter(Boolean),
+                },
               })
             }
           />

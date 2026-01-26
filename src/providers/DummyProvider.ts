@@ -28,18 +28,27 @@ function findLatestUserMessage(messages: ProviderMessage[]) {
 export const DummyProvider: AIProvider = {
   name: "DummyProvider",
   isConfigured: () => true,
-  generate: async ({ contextBlock, messages }) => {
+  generate: async ({ contextBlock, messages, systemPrompt }) => {
     const quote = extractBetweenMarkers(contextBlock, "Quoted span");
-    const excerpt = extractBetweenMarkers(contextBlock, "Origin context excerpt");
+    const excerpt = extractBetweenMarkers(contextBlock, "Origin summary");
+    const sourceAnswer = extractBetweenMarkers(contextBlock, "Source node answer");
     const isBranch = /branch session:\s*true/i.test(contextBlock);
     const lastUser = findLatestUserMessage(messages);
     const prompt = lastUser ? lastUser.content : "";
+    const isSummarizer = /compact context summary/i.test(systemPrompt);
+    if (isSummarizer) {
+      const summaryQuote = quote ? truncate(quote, 80) : "No quote";
+      const summaryAnswer = sourceAnswer ? truncate(sourceAnswer, 80) : "No answer context";
+      return {
+        text: `- Quote focus: ${summaryQuote}\n- Source context: ${summaryAnswer}\n- Prior messages: summarized for branch context\n- Constraints: do not answer branch question\n- Scope: branch-specific discussion only`,
+      };
+    }
     const quoteLine = quote
       ? `Quote noted: "${truncate(quote)}"`
       : "No quote was provided.";
     const excerptLine = excerpt
-      ? `Origin context: "${truncate(excerpt)}"`
-      : "No origin context provided.";
+      ? `Origin summary: "${truncate(excerpt)}"`
+      : "No origin summary provided.";
     const replyLine = prompt
       ? `Your latest message: "${truncate(prompt)}"`
       : "Ask a question to continue.";

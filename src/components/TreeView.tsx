@@ -8,6 +8,7 @@ interface TreeViewProps {
   activeTreeId: string | null;
   activeSessionId: string | null;
   selectedNodeId: string | null;
+  palette: string[];
   onSelectTree: (treeId: string) => void;
   onToggleTree: (treeId: string) => void;
   onSelectSession: (sessionId: string) => void;
@@ -79,6 +80,7 @@ function SessionChain({
   onSelectSession,
   onSelectNode,
   branchSessionsBySource,
+  palette,
 }: {
   session: Session;
   nodes: Record<string, Node>;
@@ -89,9 +91,13 @@ function SessionChain({
   onSelectSession: (sessionId: string) => void;
   onSelectNode: (nodeId: string) => void;
   branchSessionsBySource: Map<string, Session[]>;
+  palette: string[];
 }) {
   const chainNodes = getSessionNodes(session, nodes);
   const isActiveSession = session.id === activeSessionId;
+  const sessionColor = palette.length
+    ? palette[Math.abs(session.colorKey) % palette.length]
+    : "#5b9bff";
 
   return (
     <div>
@@ -100,11 +106,14 @@ function SessionChain({
           className={`tree-branch-label ${isActiveSession ? "active" : ""}`}
           style={{ paddingLeft: depth * 14 }}
         >
+          <span className="tree-band" style={{ background: sessionColor }} />
+          <span className="tree-connector" style={{ background: sessionColor }} />
           <button
             className="tree-branch-title"
             type="button"
             onClick={() => onSelectSession(session.id)}
           >
+            <span className="tree-kind">B</span>
             {getOriginLabel(session, nodes)}
           </button>
         </div>
@@ -116,6 +125,11 @@ function SessionChain({
             className={`tree-item ${selectedNodeId === node.id ? "selected" : ""}`}
             style={{ paddingLeft: depth * 14 }}
           >
+            <span className="tree-band" style={{ background: sessionColor }} />
+            <span
+              className={`commit-dot ${node.answer ? "filled" : "pending"}`}
+              style={{ borderColor: sessionColor, color: sessionColor }}
+            />
             <button
               className="tree-label"
               type="button"
@@ -137,6 +151,7 @@ function SessionChain({
               onSelectSession={onSelectSession}
               onSelectNode={onSelectNode}
               branchSessionsBySource={branchSessionsBySource}
+              palette={palette}
             />
           ))}
         </div>
@@ -152,6 +167,7 @@ export default function TreeView({
   activeTreeId,
   activeSessionId,
   selectedNodeId,
+  palette,
   onSelectTree,
   onToggleTree,
   onSelectSession,
@@ -184,6 +200,7 @@ export default function TreeView({
                 type="button"
                 onClick={() => onSelectTree(tree.id)}
               >
+                <span className="tree-kind">T</span>
                 {tree.title}
               </button>
             </div>
@@ -198,6 +215,7 @@ export default function TreeView({
                 onSelectSession={onSelectSession}
                 onSelectNode={onSelectNode}
                 branchSessionsBySource={branchSessionsBySource}
+                palette={palette}
               />
             ) : null}
           </div>
