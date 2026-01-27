@@ -111,6 +111,13 @@ palette.length
 -   Better spacing
 -   Icons for trunk/branch
 -   Tooltip for quote selection
+-   Send button sits to the right of the composer textarea
+-   Composer textarea style: 17px, weight 600, black text, slightly taller glyphs via scaleY(1.03)
+-   Composer and settings textareas resize vertically only (fixed width)
+-   Chat bubbles inset from edges and tighter Q/A spacing
+-   Chat bubble max width: 50%
+-   Tree font size increased (~15px for titles and labels)
+-   Tree labels: line break after 25 chars; truncate after 45 chars with "..."
 
 ------------------------------------------------------------------------
 

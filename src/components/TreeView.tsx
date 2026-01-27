@@ -15,12 +15,40 @@ interface TreeViewProps {
   onSelectNode: (nodeId: string) => void;
 }
 
-function truncateLabel(text: string, max = 60) {
+const TREE_LABEL_MAX = 45;
+const TREE_LABEL_BREAK = 25;
+
+function truncateLabel(text: string, max = TREE_LABEL_MAX) {
   const trimmed = text.trim();
   if (!trimmed) {
     return "Untitled question";
   }
   return trimmed.length > max ? `${trimmed.slice(0, max - 3)}...` : trimmed;
+}
+
+function splitLabel(text: string) {
+  const truncated = truncateLabel(text);
+  if (truncated.length <= TREE_LABEL_BREAK) {
+    return { first: truncated, second: "" };
+  }
+  return {
+    first: truncated.slice(0, TREE_LABEL_BREAK),
+    second: truncated.slice(TREE_LABEL_BREAK),
+  };
+}
+
+function renderLabel(text: string) {
+  const { first, second } = splitLabel(text);
+  if (!second) {
+    return first;
+  }
+  return (
+    <>
+      {first}
+      <br />
+      {second}
+    </>
+  );
 }
 
 function getSessionNodes(session: Session, nodes: Record<string, Node>) {
@@ -114,7 +142,7 @@ function SessionChain({
             onClick={() => onSelectSession(session.id)}
           >
             <span className="tree-kind">B</span>
-            {getOriginLabel(session, nodes)}
+            {renderLabel(getOriginLabel(session, nodes))}
           </button>
         </div>
       ) : null}
@@ -135,7 +163,7 @@ function SessionChain({
               type="button"
               onClick={() => onSelectNode(node.id)}
             >
-              {truncateLabel(node.question)}
+              {renderLabel(node.question)}
             </button>
           </div>
 
@@ -201,7 +229,7 @@ export default function TreeView({
                 onClick={() => onSelectTree(tree.id)}
               >
                 <span className="tree-kind">T</span>
-                {tree.title}
+                {renderLabel(tree.title)}
               </button>
             </div>
             {!tree.collapsed && trunkSession ? (

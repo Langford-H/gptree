@@ -186,14 +186,14 @@ export default function ChatPane({
       {errorMessage ? <div className="error-banner">{errorMessage}</div> : null}
 
       <div className="composer">
-        <textarea
-          value={composerText}
-          onChange={(event) => setComposerText(event.target.value)}
-          placeholder="Type your question..."
-        />
-        <div className="composer-actions">
+        <div className="composer-row">
+          <textarea
+            value={composerText}
+            onChange={(event) => setComposerText(event.target.value)}
+            placeholder="Type your question..."
+          />
           <button
-            className="button-primary"
+            className="button-primary composer-send"
             type="button"
             onClick={handleSend}
             disabled={isGenerating}

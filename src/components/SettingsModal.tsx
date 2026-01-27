@@ -280,9 +280,6 @@ export default function SettingsModal({
             <h3>Export / Import</h3>
             <p>API keys are never exported.</p>
           </div>
-          <button className="button-secondary" type="button" onClick={handleExport}>
-            Export JSON
-          </button>
           {exportText ? <textarea readOnly value={exportText} rows={6} /> : null}
           <textarea
             placeholder="Paste JSON to import"
@@ -290,7 +287,10 @@ export default function SettingsModal({
             onChange={(event) => setImportText(event.target.value)}
             rows={6}
           />
-          <div className="settings-actions">
+          <div className="settings-actions export-actions">
+            <button className="button-secondary" type="button" onClick={handleExport}>
+              Export JSON
+            </button>
             <button className="button-secondary" type="button" onClick={handleImport}>
               Import JSON
             </button>

@@ -65,14 +65,14 @@ button {
   border: none;
   background: transparent;
   color: inherit;
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .tree-title {
   background: transparent;
   border: none;
   color: inherit;
-  font-size: 13px;
+  font-size: 15px;
   text-align: left;
   flex: 1;
   padding: 0;
@@ -85,7 +85,7 @@ button {
   gap: 6px;
   padding: 4px 6px;
   border-radius: 6px;
-  font-size: 13px;
+  font-size: 15px;
 }
 
 .tree-item.selected {
@@ -131,7 +131,7 @@ button {
   background: transparent;
   border: none;
   color: inherit;
-  font-size: 13px;
+  font-size: 15px;
   text-align: left;
   flex: 1;
   padding: 0;
@@ -141,12 +141,12 @@ button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   border-radius: 6px;
   background: #2f3640;
   color: #f5f6fa;
-  font-size: 10px;
+  font-size: 11px;
   margin-right: 6px;
 }
 
@@ -286,19 +286,31 @@ button {
   gap: 8px;
 }
 
+.composer-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+
 .composer textarea {
   width: 100%;
+  flex: 1;
   min-height: 90px;
   resize: vertical;
   padding: 10px;
   border-radius: 8px;
   border: 1px solid #c8ccd4;
+  font-size: 18px;
+  line-height: 1.55;
+  font-weight: 500;
+  color: #000;
+  transform: scaleY(1.03);
+  transform-origin: top left;
 }
 
-.composer-actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
+.composer-send {
+  height: 44px;
+  align-self: flex-end;
 }
 
 .selection-error {
@@ -358,6 +370,11 @@ button {
   border-radius: 6px;
   border: 1px solid #c8ccd4;
   font-family: inherit;
+}
+
+.settings-row textarea,
+.export-box textarea {
+  resize: vertical;
 }
 
 .settings-branch-seed {
@@ -437,6 +454,9 @@ button {
   padding: 12px;
   border-radius: 8px;
   margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .export-header h3 {
@@ -447,6 +467,15 @@ button {
   margin: 0 0 8px 0;
   font-size: 12px;
   color: #555;
+}
+
+.export-box textarea {
+  width: 100%;
+}
+
+.export-actions {
+  justify-content: flex-end;
+  margin-top: 6px;
 }
 
 .status-text {
