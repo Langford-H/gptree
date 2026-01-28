@@ -18,8 +18,17 @@ interface TreeViewProps {
 const TREE_LABEL_MAX = 45;
 const TREE_LABEL_BREAK = 25;
 
+function normalizeLabelText(text: string) {
+  return text
+    .replace(/\$\$/g, "")
+    .replace(/\$/g, "")
+    .replace(/[\r\n]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function truncateLabel(text: string, max = TREE_LABEL_MAX) {
-  const trimmed = text.trim();
+  const trimmed = normalizeLabelText(text);
   if (!trimmed) {
     return "Untitled question";
   }
@@ -101,7 +110,6 @@ function getOriginLabel(session: Session, nodes: Record<string, Node>) {
 function SessionChain({
   session,
   nodes,
-  sessions,
   depth,
   activeSessionId,
   selectedNodeId,
@@ -112,7 +120,6 @@ function SessionChain({
 }: {
   session: Session;
   nodes: Record<string, Node>;
-  sessions: Record<string, Session>;
   depth: number;
   activeSessionId: string | null;
   selectedNodeId: string | null;
@@ -172,7 +179,6 @@ function SessionChain({
               key={branchSession.id}
               session={branchSession}
               nodes={nodes}
-              sessions={sessions}
               depth={depth + 1}
               activeSessionId={activeSessionId}
               selectedNodeId={selectedNodeId}
@@ -236,7 +242,6 @@ export default function TreeView({
               <SessionChain
                 session={trunkSession}
                 nodes={nodes}
-                sessions={sessions}
                 depth={0}
                 activeSessionId={activeSessionId}
                 selectedNodeId={selectedNodeId}

@@ -1,8 +1,10 @@
-import React, { useEffect, useRef, useState } from "react";
-import { Node } from "../models/types";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import MarkdownIt from "markdown-it";
+import katex from "katex";
+import type { Node as WorkspaceNode } from "../models/types";
 
 interface ChatPaneProps {
-  nodes: Node[];
+  nodes: WorkspaceNode[];
   treeTitle: string;
   sessionLabel: string;
   sessionKind: "trunk" | "branch";
@@ -36,6 +38,157 @@ function findNodeIdFromSelection(selection: Selection | null) {
   return null;
 }
 
+function injectMath(text: string) {
+  const replacements = new Map<string, string>();
+  let tokenIndex = 0;
+  const withBlocks = text
+    .replace(/\\\[((?:.|\n)*?)\\\]/g, (_, expr) => {
+      const token = `@@KATEX_BLOCK_${tokenIndex++}@@`;
+      replacements.set(
+        token,
+        katex.renderToString(String(expr).trim(), {
+          throwOnError: false,
+          displayMode: true,
+        })
+      );
+      return token;
+    })
+    .replace(/\$\$([\s\S]*?)\$\$/g, (_, expr) => {
+      const token = `@@KATEX_BLOCK_${tokenIndex++}@@`;
+      replacements.set(
+        token,
+        katex.renderToString(String(expr).trim(), {
+          throwOnError: false,
+          displayMode: true,
+        })
+      );
+      return token;
+    });
+  const withInline = withBlocks
+    .replace(/\\\(((?:.|\n)*?)\\\)/g, (_, expr) => {
+      const token = `@@KATEX_INLINE_${tokenIndex++}@@`;
+      replacements.set(
+        token,
+        katex.renderToString(String(expr).trim(), {
+          throwOnError: false,
+          displayMode: false,
+        })
+      );
+      return token;
+    })
+    .replace(/\$(\s*[^$]*?\s*)\$/g, (_, expr) => {
+      const token = `@@KATEX_INLINE_${tokenIndex++}@@`;
+      replacements.set(
+        token,
+        katex.renderToString(String(expr).trim(), {
+          throwOnError: false,
+          displayMode: false,
+        })
+      );
+      return token;
+    });
+  return { text: withInline, replacements };
+}
+
+function renderWithMath(markdown: MarkdownIt, text: string) {
+  const { text: normalized, replacements } = injectMath(text);
+  let html = markdown.render(normalized);
+  replacements.forEach((value, key) => {
+    html = html.split(key).join(value);
+  });
+  return html;
+}
+
+function normalizeWithMap(source: string) {
+  const normalizedChars: string[] = [];
+  const indexMap: number[] = [];
+  for (let i = 0; i < source.length; i += 1) {
+    const char = source[i];
+    if (!/[a-z0-9]/i.test(char)) {
+      continue;
+    }
+    normalizedChars.push(char.toLowerCase());
+    indexMap.push(i);
+  }
+  return { normalized: normalizedChars.join(""), indexMap };
+}
+
+function normalizePlain(text: string) {
+  return text.replace(/[^a-z0-9]/gi, "").toLowerCase();
+}
+
+function findSourceSlice(source: string, selectionText: string) {
+  if (!source || !selectionText) {
+    return selectionText;
+  }
+  const directIndex = source.indexOf(selectionText);
+  if (directIndex >= 0) {
+    return source.slice(directIndex, directIndex + selectionText.length);
+  }
+  const { normalized: normalizedSource, indexMap } = normalizeWithMap(source);
+  const normalizedSelection = normalizePlain(selectionText);
+  if (!normalizedSelection) {
+    return selectionText;
+  }
+  const normalizedIndex = normalizedSource.indexOf(normalizedSelection);
+  if (normalizedIndex < 0) {
+    return selectionText;
+  }
+  const start = indexMap[Math.min(normalizedIndex, indexMap.length - 1)];
+  const endIndex = normalizedIndex + normalizedSelection.length - 1;
+  const end = indexMap[Math.min(endIndex, indexMap.length - 1)] ?? start;
+  return source.slice(start, end + 1);
+}
+
+
+function extractSelectionText(selection: Selection) {
+  const range = selection.getRangeAt(0);
+  const ancestor =
+    (range.commonAncestorContainer instanceof Element
+      ? range.commonAncestorContainer
+      : range.commonAncestorContainer.parentElement) ?? null;
+  const katexElements = ancestor
+    ? Array.from(ancestor.querySelectorAll(".katex, .katex-display"))
+    : [];
+  if (katexElements.length === 0) {
+    return selection.toString().trim();
+  }
+  const fragment = range.cloneContents();
+  const walker = document.createTreeWalker(
+    fragment,
+    NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT
+  );
+  const pieces: string[] = [];
+  let current: globalThis.Node | null = walker.nextNode();
+  while (current) {
+    if (current.nodeType === globalThis.Node.TEXT_NODE) {
+      const text = current.textContent ?? "";
+      if (text.trim()) {
+        pieces.push(text);
+      }
+      current = walker.nextNode();
+      continue;
+    }
+    const element = current as Element;
+    if (element.classList.contains("katex") || element.classList.contains("katex-display")) {
+      const annotation = element.querySelector("annotation");
+      const tex = annotation?.textContent?.trim();
+      if (tex) {
+        const isDisplay = Boolean(
+          element.classList.contains("katex-display") ||
+            element.closest(".katex-display")
+        );
+        pieces.push(isDisplay ? `$$${tex}$$` : `$${tex}$`);
+      }
+      walker.currentNode = element;
+      current = walker.nextSibling();
+      continue;
+    }
+    current = walker.nextNode();
+  }
+  return pieces.join(" ").replace(/\s+/g, " ").trim();
+}
+
 export default function ChatPane({
   nodes,
   treeTitle,
@@ -57,6 +210,14 @@ export default function ChatPane({
   const [composerText, setComposerText] = useState("");
   const [selectionError, setSelectionError] = useState("");
   const [selectionHint, setSelectionHint] = useState("");
+  const markdown = useMemo(
+    () =>
+      new MarkdownIt({
+        linkify: true,
+        breaks: true,
+      }),
+    []
+  );
 
   useEffect(() => {
     if (!scrollToNodeId || !transcriptRef.current) {
@@ -66,7 +227,10 @@ export default function ChatPane({
       `[data-node-id="${scrollToNodeId}"]`
     ) as HTMLElement | null;
     if (target) {
-      target.scrollIntoView({ behavior: "smooth", block: "center" });
+      const container = transcriptRef.current;
+      const offsetTop = target.offsetTop;
+      const nextTop = Math.max(0, offsetTop - container.clientHeight / 2);
+      container.scrollTo({ top: nextTop, behavior: "smooth" });
     }
     onScrollComplete();
   }, [scrollToNodeId, onScrollComplete]);
@@ -80,14 +244,22 @@ export default function ChatPane({
     onSend(text);
   };
 
-  const captureSelection = () => {
-    const selection = window.getSelection();
-    if (!selection || selection.isCollapsed) {
-      selectionRef.current = null;
-      setSelectionHint("");
+  const handleComposerKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key !== "Enter" || event.shiftKey) {
       return;
     }
-    const quoteText = selection.toString().trim();
+    event.preventDefault();
+    handleSend();
+  };
+
+  const captureSelection = () => {
+  const selection = window.getSelection();
+  if (!selection || selection.isCollapsed) {
+    selectionRef.current = null;
+    setSelectionHint("");
+      return;
+    }
+    const quoteText = extractSelectionText(selection);
     if (!quoteText) {
       selectionRef.current = null;
       setSelectionHint("");
@@ -99,7 +271,10 @@ export default function ChatPane({
       setSelectionHint("");
       return;
     }
-    selectionRef.current = { text: quoteText, nodeId };
+    const sourceNode = nodes.find((item) => item.id === nodeId);
+    const sourceText = sourceNode?.answer || sourceNode?.question || "";
+    const mappedText = findSourceSlice(sourceText, quoteText);
+    selectionRef.current = { text: mappedText, nodeId };
     setSelectionError("");
     setSelectionHint("Quote selected. Click Create Branch from Quote.");
   };
@@ -167,13 +342,21 @@ export default function ChatPane({
               }`}
               data-node-id={node.id}
             >
-              <div className="message message-user">{node.question}</div>
+              <div
+                className="message message-user"
+                dangerouslySetInnerHTML={{ __html: markdown.render(node.question) }}
+              />
               <div className="message message-assistant">
-                {node.answer
-                  ? node.answer
-                  : isGenerating && isLast
-                    ? "Generating response..."
-                    : "Awaiting response."}
+                {node.answer ? (
+                  <div
+                    className="message-content"
+                    dangerouslySetInnerHTML={{ __html: renderWithMath(markdown, node.answer) }}
+                  />
+                ) : (
+                  <div className="message-content">
+                    {isGenerating && isLast ? "Generating response..." : "Awaiting response."}
+                  </div>
+                )}
               </div>
             </div>
             );
@@ -190,6 +373,7 @@ export default function ChatPane({
           <textarea
             value={composerText}
             onChange={(event) => setComposerText(event.target.value)}
+            onKeyDown={handleComposerKeyDown}
             placeholder="Type your question..."
           />
           <button
@@ -198,7 +382,7 @@ export default function ChatPane({
             onClick={handleSend}
             disabled={isGenerating}
           >
-            {isGenerating ? "Sending..." : "Send"}
+            <span className="composer-send-icon">{isGenerating ? "…" : "→"}</span>
           </button>
         </div>
       </div>

@@ -2,6 +2,13 @@
   color-scheme: light;
 }
 
+html,
+body,
+#root {
+  height: 100%;
+  overflow: hidden;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -11,6 +18,8 @@ body {
   font-family: "Segoe UI", system-ui, sans-serif;
   background: #f4f4f7;
   color: #1f1f1f;
+  height: 100%;
+  overflow: hidden;
 }
 
 button {
@@ -20,7 +29,8 @@ button {
 .app {
   display: grid;
   grid-template-columns: 300px 1fr;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .sidebar {
@@ -30,6 +40,7 @@ button {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  overflow: hidden;
 }
 
 .sidebar h1 {
@@ -42,6 +53,7 @@ button {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  padding-right: 4px;
 }
 
 .tree-group {
@@ -155,6 +167,9 @@ button {
   flex-direction: column;
   padding: 24px;
   gap: 16px;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .empty-pane {
@@ -176,7 +191,9 @@ button {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  min-height: 520px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .pane-header {
@@ -238,9 +255,12 @@ button {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 8px 10px;
-  max-height: 520px;
+  padding: 16px 10px 8px;
+  flex: 1;
+  min-height: 0;
+  max-height: none;
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .empty-transcript {
@@ -270,6 +290,49 @@ button {
   line-height: 1.4;
 }
 
+.message-content > *:first-child,
+.message-user > *:first-child {
+  margin-top: 0;
+}
+
+.message-content > *:last-child,
+.message-user > *:last-child {
+  margin-bottom: 0;
+}
+
+.message-content pre,
+.message-user pre {
+  background: #0f172a;
+  color: #e2e8f0;
+  padding: 10px;
+  border-radius: 8px;
+  overflow-x: auto;
+}
+
+.message-content .katex-display {
+  margin: 8px 0;
+}
+
+.message-content code,
+.message-user code {
+  font-family: "Cascadia Code", "Consolas", monospace;
+  font-size: 0.95em;
+}
+
+.message-content a,
+.message-user a {
+  color: inherit;
+  text-decoration: underline;
+}
+
+.message-content ul,
+.message-content ol,
+.message-user ul,
+.message-user ol {
+  padding-left: 20px;
+  margin: 6px 0;
+}
+
 .message-user {
   align-self: flex-end;
   background: #e7f0ff;
@@ -284,12 +347,15 @@ button {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  width: 100%;
 }
 
 .composer-row {
   display: flex;
   align-items: flex-end;
   gap: 10px;
+  position: relative;
+  width: 100%;
 }
 
 .composer textarea {
@@ -297,7 +363,7 @@ button {
   flex: 1;
   min-height: 90px;
   resize: vertical;
-  padding: 10px;
+  padding: 12px 60px 12px 12px;
   border-radius: 8px;
   border: 1px solid #c8ccd4;
   font-size: 18px;
@@ -309,8 +375,31 @@ button {
 }
 
 .composer-send {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  width: 44px;
   height: 44px;
-  align-self: flex-end;
+  border-radius: 50%;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  line-height: 1;
+  font-size: 24px;
+}
+
+.button-primary.composer-send {
+  padding: 0;
+  border-radius: 50%;
+}
+
+.composer-send-icon {
+  display: inline-block;
+  position: relative;
+  top: -2px;
+  line-height: 1;
 }
 
 .selection-error {

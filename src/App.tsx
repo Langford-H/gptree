@@ -29,10 +29,6 @@ function truncateText(text: string, max = 60) {
   return `${trimmed.slice(0, max - 3)}...`;
 }
 
-function getNodeLabel(node: Node) {
-  return truncateText(node.question || "Untitled question");
-}
-
 function getSessionNodes(session: Session, nodes: Record<string, Node>) {
   if (!session.headNodeId) {
     return [];
@@ -141,10 +137,14 @@ export default function App() {
     setWorkspace((current) => persistWorkspace(updater(current)));
   };
 
-  const handleSelectTree = (treeId: string) => {
+  const resetUI = () => {
     setErrorMessage(undefined);
     setSelectedNodeId(null);
     setScrollTargetId(null);
+  };
+
+  const handleSelectTree = (treeId: string) => {
+    resetUI();
     updateWorkspace((current) => {
       const tree = current.trees[treeId];
       if (!tree) {
@@ -189,9 +189,7 @@ export default function App() {
     if (!session) {
       return;
     }
-    setErrorMessage(undefined);
-    setSelectedNodeId(null);
-    setScrollTargetId(null);
+    resetUI();
     updateWorkspace((current) => {
       const tree = current.trees[session.treeId];
       return {
@@ -243,9 +241,7 @@ export default function App() {
   };
 
   const handleNewQuestion = () => {
-    setErrorMessage(undefined);
-    setSelectedNodeId(null);
-    setScrollTargetId(null);
+    resetUI();
     const { tree, session } = createTree();
     updateWorkspace((current) => ({
       ...current,
@@ -411,7 +407,6 @@ export default function App() {
       return;
     }
     const now = Date.now();
-    const historyNodes = activeSessionNodes;
     const isFirstNode = !activeSession.headNodeId;
     const newNode = createNode({
       sessionId: activeSession.id,
@@ -505,7 +500,7 @@ export default function App() {
       return;
     }
 
-    const promptMessages = buildHistoryMessages(historyNodes, MAX_HISTORY_NODES);
+    const promptMessages = buildHistoryMessages(activeSessionNodes, MAX_HISTORY_NODES);
     promptMessages.push({ role: "user", content: text });
 
     let systemPrompt = workspace.settings.rootSeed;
@@ -605,9 +600,7 @@ export default function App() {
     if (!confirmed) {
       return;
     }
-    setErrorMessage(undefined);
-    setSelectedNodeId(null);
-    setScrollTargetId(null);
+    resetUI();
     const nextWorkspace = createWorkspace();
     setWorkspace(persistWorkspace(nextWorkspace));
   };

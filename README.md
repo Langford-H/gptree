@@ -118,6 +118,11 @@ palette.length
 -   Chat bubble max width: 50%
 -   Tree font size increased (~15px for titles and labels)
 -   Tree labels: line break after 25 chars; truncate after 45 chars with "..."
+-   Message rendering supports Markdown + TeX (KaTeX)
+-   Composer send: circular arrow button inside input; Enter sends, Shift+Enter inserts newline
+-   Math rendering now applies only to assistant answers
+-   Branch quote/title displays plain text (no markdown/TeX render)
+-   Quote selection mapping prefers original AI source text via normalized matching (letters/digits only); falls back to selection text if unmatched
 
 ------------------------------------------------------------------------
 
