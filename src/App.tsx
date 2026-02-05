@@ -7,6 +7,7 @@ import { DummyProvider } from "./providers/DummyProvider";
 import { OpenAICompatibleProvider } from "./providers/OpenAICompatibleProvider";
 import { Node, Session, Tree, Workspace } from "./models/types";
 import {
+  DEFAULT_SETTINGS,
   createNode,
   createSession,
   createTree,
@@ -595,14 +596,36 @@ export default function App() {
 
   const handleClearAll = () => {
     const confirmed = window.confirm(
-      "Clear all trees and reset workspace? This cannot be undone."
+      "Clear all conversations? This cannot be undone."
     );
     if (!confirmed) {
       return;
     }
     resetUI();
-    const nextWorkspace = createWorkspace();
-    setWorkspace(persistWorkspace(nextWorkspace));
+    setWorkspace(
+      persistWorkspace({
+        ...workspace,
+        trees: {},
+        sessions: {},
+        nodes: {},
+        activeTreeId: null,
+        activeSessionId: null,
+      })
+    );
+  };
+
+  const handleResetSettings = () => {
+    updateWorkspace((current) => ({
+      ...current,
+      settings: {
+        ...DEFAULT_SETTINGS,
+        providerConfig: { ...DEFAULT_SETTINGS.providerConfig },
+        uiTheme: {
+          baseFontSize: DEFAULT_SETTINGS.uiTheme.baseFontSize,
+          palette: [...DEFAULT_SETTINGS.uiTheme.palette],
+        },
+      },
+    }));
   };
 
   const handleTestConnection = async (draftSettings: Workspace["settings"]) => {
@@ -778,6 +801,7 @@ export default function App() {
           }))}
         onClose={() => setIsSettingsOpen(false)}
         onSave={handleSaveSettings}
+        onReset={handleResetSettings}
         onTest={handleTestConnection}
         onExport={handleExport}
         onImport={handleImport}

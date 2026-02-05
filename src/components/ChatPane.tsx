@@ -91,14 +91,25 @@ function injectMath(text: string) {
 }
 
 function renderWithMath(markdown: MarkdownIt, text: string) {
-  const { text: normalized, replacements } = injectMath(text);
+  const { text: normalized, replacements } = injectMath(text.trimEnd());
   let html = markdown.render(normalized);
   replacements.forEach((value, key) => {
     html = html.split(key).join(value);
   });
-  return html;
+  return sanitizeRenderedHtml(html);
 }
 
+function renderMarkdown(markdown: MarkdownIt, text: string) {
+  return sanitizeRenderedHtml(markdown.render(text.trimEnd()));
+}
+
+function sanitizeRenderedHtml(html: string) {
+  return html
+    .replace(/(?:<p><br\s*\/?><\/p>\s*)+$/gi, "")
+    .replace(/(<br\s*\/?\s*>\s*)+$/gi, "")
+    .replace(/(?:<p>\s*<\/p>\s*)+$/gi, "")
+    .replace(/\s+$/g, "");
+}
 function normalizeWithMap(source: string) {
   const normalizedChars: string[] = [];
   const indexMap: number[] = [];
@@ -344,7 +355,9 @@ export default function ChatPane({
             >
               <div
                 className="message message-user"
-                dangerouslySetInnerHTML={{ __html: markdown.render(node.question) }}
+                dangerouslySetInnerHTML={{
+                  __html: renderMarkdown(markdown, node.question),
+                }}
               />
               <div className="message message-assistant">
                 {node.answer ? (

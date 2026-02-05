@@ -123,6 +123,12 @@ palette.length
 -   Math rendering now applies only to assistant answers
 -   Branch quote/title displays plain text (no markdown/TeX render)
 -   Quote selection mapping prefers original AI source text via normalized matching (letters/digits only); falls back to selection text if unmatched
+-   Clear All now wipes conversations only (settings preserved); branch seeds removed with sessions
+-   Settings modal includes a Reset Settings button
+-   Settings saved hint persists until modal closes
+-   Test connection feedback moves to the footer status area (next to save status)
+-   Rendered message HTML trims trailing whitespace/empty breaks to remove phantom bottom line spacing
+-   Removed experimental bubble CSS (inline-block + paragraph margins) after confirming the render-side fix
 
 ------------------------------------------------------------------------
 

@@ -280,7 +280,7 @@ button {
 }
 
 .message {
-  padding: 10px 10px;
+  padding: 4px 10px;
   border-radius: 12px;
   font-size: 17px;
   max-width: 50%;
@@ -299,6 +299,7 @@ button {
 .message-user > *:last-child {
   margin-bottom: 0;
 }
+
 
 .message-content pre,
 .message-user pre {
@@ -443,6 +444,12 @@ button {
   margin-bottom: 12px;
 }
 
+.settings-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .settings-row {
   display: grid;
   grid-template-columns: 160px 1fr;
@@ -521,6 +528,13 @@ button {
   gap: 8px;
   flex-wrap: wrap;
   margin-top: 12px;
+}
+
+.settings-footer-status {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .button-primary {

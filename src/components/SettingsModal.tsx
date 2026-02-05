@@ -7,6 +7,7 @@ interface SettingsModalProps {
   branchSeeds: Array<{ sessionId: string; seed: BranchSeed }>;
   onClose: () => void;
   onSave: (settings: WorkspaceSettings) => void;
+  onReset: () => void;
   onTest: (settings: WorkspaceSettings) => Promise<string>;
   onExport: () => string;
   onImport: (raw: string) => { ok: boolean; error?: string };
@@ -18,6 +19,7 @@ export default function SettingsModal({
   branchSeeds,
   onClose,
   onSave,
+  onReset,
   onTest,
   onExport,
   onImport,
@@ -27,6 +29,7 @@ export default function SettingsModal({
   const [exportText, setExportText] = useState("");
   const [importText, setImportText] = useState("");
   const [importStatus, setImportStatus] = useState<string | null>(null);
+  const [saveStatus, setSaveStatus] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -35,7 +38,9 @@ export default function SettingsModal({
       setExportText("");
       setImportText("");
       setImportStatus(null);
+      return;
     }
+    setSaveStatus(null);
   }, [isOpen, settings]);
 
   if (!isOpen) {
@@ -55,7 +60,7 @@ export default function SettingsModal({
 
   const handleSave = () => {
     onSave(draft);
-    setTestStatus("Settings saved.");
+    setSaveStatus("Settings saved.");
   };
 
   const handleTest = async () => {
@@ -87,9 +92,14 @@ export default function SettingsModal({
       <div className="settings-panel">
         <div className="settings-header">
           <h2>Settings</h2>
-          <button className="button-secondary" type="button" onClick={onClose}>
-            Close
-          </button>
+          <div className="settings-header-actions">
+            <button className="button-secondary" type="button" onClick={onReset}>
+              Reset Settings
+            </button>
+            <button className="button-secondary" type="button" onClick={onClose}>
+              Close
+            </button>
+          </div>
         </div>
 
         <div className="settings-row">
@@ -265,14 +275,6 @@ export default function SettingsModal({
           <button className="button-secondary" type="button" onClick={handleTest}>
             Test Connection
           </button>
-          <button
-            className="button-secondary"
-            type="button"
-            onClick={() => updateProviderConfig({ apiKey: "" })}
-          >
-            Forget Key
-          </button>
-          {testStatus ? <div className="status-text">{testStatus}</div> : null}
         </div>
 
         <div className="export-box">
@@ -296,6 +298,10 @@ export default function SettingsModal({
             </button>
             {importStatus ? <div className="status-text">{importStatus}</div> : null}
           </div>
+        </div>
+        <div className="settings-footer-status">
+          {testStatus ? <div className="status-text">{testStatus}</div> : null}
+          {saveStatus ? <div className="status-text">{saveStatus}</div> : null}
         </div>
       </div>
     </div>
