@@ -1,162 +1,53 @@
-# GPTree v0.2.2 --- Standalone Static Web Demo (Vite)
+# GPTree
 
-## Root Seed + Branch Seed (C3-true) + Polished Git-Style Tree UI
+Manage your questions and quotes like git.
 
-Authoritative specification for Codex implementation.
+GPTree is currently a test beta/demo for a tree-structured AI chat interface. The goal is to explore a git-like workflow for Q&A, where each user question becomes a node, quoted text can spawn a branch, and users can move between trunk and branch sessions inside one app.
 
-------------------------------------------------------------------------
+This repository should be treated as an active prototype rather than a finished release. The current build is useful for testing core interaction ideas, UI behavior, prompt seeding, and branch/session flow. The complete version is still in development.
 
-## 0) What's New in v0.2.2
+## Current State
 
-This version introduces: 1. Seed discipline (Root Seed + Branch Seed) 2.
-C3-true summarization for branch origin context 3. Improved Tree UI
-(colored bands, commit dots, connectors)
+- Beta demo only
+- Core branching chat workflow is implemented
+- Tree sidebar, branch seeds, local persistence, markdown, and TeX rendering are being iterated
+- UI and interaction details are still changing
+- Merge-back and broader product polish are not complete
 
-Merge-back is deferred.
+## What This Demo Is For
 
-------------------------------------------------------------------------
+- Testing the git-like tree chat model
+- Validating branch creation from quoted text
+- Experimenting with session switching and branch seed context
+- Refining the terminal/web interface behavior before a full release
 
-## 1) Terminology
+## Run Locally
 
-Root Seed: Workspace-level system prompt.\
-Branch Seed: Branch-specific context packet.\
-Session: Continuous chat transcript.\
-Node: One user Send + assistant reply.
+From the project root:
 
-------------------------------------------------------------------------
+```bash
+npm install
+npm run dev
+```
 
-## 2) Behavioral Rules
+Then open the local Vite URL shown in the terminal, usually `http://localhost:5173`.
 
--   Node = one user message + assistant answer
--   Every Send creates a Node
--   Branching creates a new Session
--   Branches can branch
--   Merge-back deferred
+Useful commands:
 
-------------------------------------------------------------------------
+- `npm run build` builds the production bundle
+- `npm run preview` previews the built app locally
 
-## 3) Seeds
+## API Note
 
-### Root Seed (workspace.settings.rootSeed)
+Users need to connect their own API/provider for external model use. If you need a model source to start with, a practical place to browse is `https://modelscope.cn/models`.
 
-Default:
+## Project Documents
 
-You are an assistant helping manage a tree-structured Q&A workflow
-(GPTree). Rules: - Treat each user message as a commit node. - Be
-concise and technical. - Do not hallucinate missing context. - Ask at
-most one clarifying question if needed. - Prioritize branch seed context
-in branch sessions.
+- [PROJECT_PLAN.md](/c:/Users/dahua/Desktop/gptree/PROJECT_PLAN.md): current implementation plan / internal spec
+- [Improvement_Log.md](/c:/Users/dahua/Desktop/gptree/Improvement_Log.md): change notes and follow-up items
 
-### Branch Seed (session.branchSeed)
+## Status Note
 
-Fields: - sourceTreeId - sourceSessionId - sourceNodeId - quoteText -
-originSummary - createdAt
+This codebase is intentionally positioned as a working demo. Expect rough edges, ongoing UI changes, and incomplete product decisions. The full version is on the way.
 
-Settings UI:
-- Root Seed is editable in Settings.
-- Branch Seeds are listed read-only (all branch sessions), including source IDs, quoteText, originSummary, and sessionId.
-
-------------------------------------------------------------------------
-
-## 4) C3-True Branch Seed Summarization
-
-Trigger: Branch creation.
-
-Context: - quoted span - source node Q/A - last K preceding nodes (K=4)
-
-Summarizer system prompt:
-
-You are generating a compact context summary for a branch discussion.
-Produce 5--8 bullet points. Do not answer the branch question.
-
-------------------------------------------------------------------------
-
-## 5) Branch Prompt Assembly
-
-Trunk: - System: Root Seed - History: last M nodes - User: question
-
-Branch: - System: Root Seed + Branch Instruction - User Context Block:
-quote + originSummary - History: last M branch nodes - User: question
-
-Branch Instruction:
-
-You are in a BRANCH session derived from a quoted span. Prioritize the
-quoted span and originSummary.
-
-------------------------------------------------------------------------
-
-## 6) Data Model Additions
-
-Workspace.settings: - rootSeed - uiTheme { baseFontSize, palette }
-
-Session: - branchSeed - colorKey
-
-------------------------------------------------------------------------
-
-## 7) Tree UI Rendering
-
--   Vertical colored band per session
--   Commit dots (filled = answered, hollow = pending)
--   Branch connectors
--   Nested branches allowed
-
-Color assignment: - trunk = palette\[0\] - branch = hash(sessionId) %
-palette.length
-
-------------------------------------------------------------------------
-
-## 8) UI/UX Refinements
-
--   Larger fonts
--   Better spacing
--   Icons for trunk/branch
--   Tooltip for quote selection
--   Send button sits to the right of the composer textarea
--   Composer textarea style: 17px, weight 600, black text, slightly taller glyphs via scaleY(1.03)
--   Composer and settings textareas resize vertically only (fixed width)
--   Chat bubbles inset from edges and tighter Q/A spacing
--   Chat bubble max width: 50%
--   Tree font size increased (~15px for titles and labels)
--   Tree labels: line break after 25 chars; truncate after 45 chars with "..."
--   Message rendering supports Markdown + TeX (KaTeX)
--   Composer send: circular arrow button inside input; Enter sends, Shift+Enter inserts newline
--   Math rendering now applies only to assistant answers
--   Branch quote/title displays plain text (no markdown/TeX render)
--   Quote selection mapping prefers original AI source text via normalized matching (letters/digits only); falls back to selection text if unmatched
--   Clear All now wipes conversations only (settings preserved); branch seeds removed with sessions
--   Settings modal includes a Reset Settings button
--   Settings saved hint persists until modal closes
--   Test connection feedback moves to the footer status area (next to save status)
--   Rendered message HTML trims trailing whitespace/empty breaks to remove phantom bottom line spacing
--   Removed experimental bubble CSS (inline-block + paragraph margins) after confirming the render-side fix
-
-------------------------------------------------------------------------
-
-## 9) Providers
-
-DummyProvider: deterministic.\
-ExternalProvider: graceful failure handling.
-
-------------------------------------------------------------------------
-
-## 10) Persistence
-
--   branchSeed persisted locally
--   export excludes API keys
--   rootSeed included
-
-------------------------------------------------------------------------
-
-## 11) Acceptance Criteria
-
-1.  Root Seed always used.
-2.  Branch creation triggers summarizer.
-3.  Branch calls inject quote + originSummary.
-4.  Colored tree bands + commit dots.
-5.  Nested branches render correctly.
-
-------------------------------------------------------------------------
-
-## Final Instruction to Codex
-
-Implement GPTree v0.2.2 exactly per this specification.
+Longer term, GPTree is aimed at helping users write their own textbook with AI in git-tree mode.
