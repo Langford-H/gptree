@@ -77,7 +77,9 @@ button {
   border: none;
   background: transparent;
   color: inherit;
-  font-size: 14px;
+  font-size: 15px;
+  line-height: 1;
+  padding: 0;
 }
 
 .tree-title {
@@ -88,6 +90,31 @@ button {
   text-align: left;
   flex: 1;
   padding: 0;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.tree-title-editing {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.tree-title-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  box-shadow: none;
+  background: #3a3f4b;
+  color: #f5f6fa;
+  border-radius: 6px;
+  padding: 0 6px;
+  font: inherit;
+  line-height: 1.1;
+  height: 20px;
+  margin: 0;
 }
 
 .tree-item,
@@ -160,6 +187,7 @@ button {
   color: #f5f6fa;
   font-size: 11px;
   margin-right: 6px;
+  flex-shrink: 0;
 }
 
 .main {
@@ -300,6 +328,10 @@ button {
   margin-bottom: 0;
 }
 
+.message-content p,
+.message-user p {
+  margin: 0;
+}
 
 .message-content pre,
 .message-user pre {
@@ -308,10 +340,11 @@ button {
   padding: 10px;
   border-radius: 8px;
   overflow-x: auto;
+  margin: 2px 0;
 }
 
 .message-content .katex-display {
-  margin: 8px 0;
+  margin: 2px 0;
 }
 
 .message-content code,
@@ -331,7 +364,7 @@ button {
 .message-user ul,
 .message-user ol {
   padding-left: 20px;
-  margin: 6px 0;
+  margin: 2px 0;
 }
 
 .message-user {

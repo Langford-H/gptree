@@ -185,6 +185,30 @@ export default function App() {
     });
   };
 
+  const handleRenameTree = (treeId: string, title: string) => {
+    updateWorkspace((current) => {
+      const tree = current.trees[treeId];
+      if (!tree) {
+        return current;
+      }
+      const nextTitle = title.trim() || "Untitled tree";
+      if (nextTitle === tree.title) {
+        return current;
+      }
+      return {
+        ...current,
+        trees: {
+          ...current.trees,
+          [treeId]: {
+            ...tree,
+            title: nextTitle,
+            updatedAt: Date.now(),
+          },
+        },
+      };
+    });
+  };
+
   const handleSelectSession = (sessionId: string) => {
     const session = workspace.sessions[sessionId];
     if (!session) {
@@ -756,6 +780,7 @@ export default function App() {
           palette={workspace.settings.uiTheme.palette}
           onSelectTree={handleSelectTree}
           onToggleTree={handleToggleTree}
+          onRenameTree={handleRenameTree}
           onSelectSession={handleSelectSession}
           onSelectNode={handleSelectNode}
         />

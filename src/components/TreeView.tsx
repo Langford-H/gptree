@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Node, Session, Tree } from "../models/types";
 
 interface TreeViewProps {
@@ -11,6 +11,7 @@ interface TreeViewProps {
   palette: string[];
   onSelectTree: (treeId: string) => void;
   onToggleTree: (treeId: string) => void;
+  onRenameTree: (treeId: string, title: string) => void;
   onSelectSession: (sessionId: string) => void;
   onSelectNode: (nodeId: string) => void;
 }
@@ -106,6 +107,9 @@ function getOriginLabel(session: Session, nodes: Record<string, Node>) {
   }
   return `Branch from: ${truncateLabel(source.question)}`;
 }
+
+const COLLAPSED_ARROW = "\u25B8";
+const EXPANDED_ARROW = "\u25BE";
 
 function SessionChain({
   session,
@@ -204,11 +208,51 @@ export default function TreeView({
   palette,
   onSelectTree,
   onToggleTree,
+  onRenameTree,
   onSelectSession,
   onSelectNode,
 }: TreeViewProps) {
+  const [editingTreeId, setEditingTreeId] = useState<string | null>(null);
+  const [draftTitle, setDraftTitle] = useState("");
+  const titleInputRef = useRef<HTMLInputElement | null>(null);
   const treeEntries = Object.values(trees);
   const branchSessionsBySource = getBranchSessionsBySource(sessions);
+
+  useEffect(() => {
+    if (!editingTreeId) {
+      return;
+    }
+    const tree = trees[editingTreeId];
+    if (!tree) {
+      setEditingTreeId(null);
+      setDraftTitle("");
+    }
+  }, [editingTreeId, trees]);
+
+  useEffect(() => {
+    if (!editingTreeId || !titleInputRef.current) {
+      return;
+    }
+    titleInputRef.current.focus();
+    titleInputRef.current.select();
+  }, [editingTreeId]);
+
+  const startEditingTree = (tree: Tree) => {
+    setEditingTreeId(tree.id);
+    setDraftTitle(tree.title);
+  };
+
+  const finishEditingTree = (tree: Tree) => {
+    const nextTitle = normalizeLabelText(draftTitle) || "Untitled tree";
+    onRenameTree(tree.id, nextTitle);
+    setEditingTreeId(null);
+    setDraftTitle("");
+  };
+
+  const cancelEditingTree = () => {
+    setEditingTreeId(null);
+    setDraftTitle("");
+  };
 
   if (treeEntries.length === 0) {
     return <div className="empty-state">No trees yet.</div>;
@@ -227,16 +271,42 @@ export default function TreeView({
                 type="button"
                 onClick={() => onToggleTree(tree.id)}
               >
-                {tree.collapsed ? ">" : "v"}
+                {tree.collapsed ? COLLAPSED_ARROW : EXPANDED_ARROW}
               </button>
-              <button
-                className="tree-title"
-                type="button"
-                onClick={() => onSelectTree(tree.id)}
-              >
-                <span className="tree-kind">T</span>
-                {renderLabel(tree.title)}
-              </button>
+              {editingTreeId === tree.id ? (
+                <div className="tree-title tree-title-editing">
+                  <span className="tree-kind">T</span>
+                  <input
+                    ref={titleInputRef}
+                    className="tree-title-input"
+                    value={draftTitle}
+                    onChange={(event) => setDraftTitle(event.target.value)}
+                    onBlur={() => finishEditingTree(tree)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        finishEditingTree(tree);
+                      }
+                      if (event.key === "Escape") {
+                        event.preventDefault();
+                        cancelEditingTree();
+                      }
+                    }}
+                    autoFocus
+                  />
+                </div>
+              ) : (
+                <button
+                  className="tree-title"
+                  type="button"
+                  onClick={() => onSelectTree(tree.id)}
+                  onDoubleClick={() => startEditingTree(tree)}
+                  title="Double-click to rename"
+                >
+                  <span className="tree-kind">T</span>
+                  {renderLabel(tree.title)}
+                </button>
+              )}
             </div>
             {!tree.collapsed && trunkSession ? (
               <SessionChain
