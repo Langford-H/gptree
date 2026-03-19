@@ -28,9 +28,10 @@ export const DEFAULT_SETTINGS: WorkspaceSettings = {
     apiKey: "",
     model: "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
     stream: true,
-    maxTokens: 512,
+    maxTokens: 10000,
     temperature: undefined,
   },
+  showContextPreview: false,
   uiTheme: {
     baseFontSize: 17,
     palette: ["#5b9bff", "#35c3a9", "#f6b26b", "#e06666", "#8e7cc3", "#6fa8dc"],
@@ -48,6 +49,7 @@ export function createNode(options: {
     sessionId: options.sessionId,
     prevId: options.prevId,
     nextId: null,
+    title: null,
     question: options.question,
     answer: null,
     createdAt: now,
@@ -140,6 +142,7 @@ function coerceSettings(value: unknown): WorkspaceSettings {
           ? raw.providerConfig.apiKey
           : "",
     },
+    showContextPreview: raw.showContextPreview === true,
     uiTheme: {
       baseFontSize:
         raw.uiTheme && typeof raw.uiTheme.baseFontSize === "number"
@@ -256,6 +259,7 @@ function normalizeNode(value: unknown): Node | null {
     sessionId: node.sessionId,
     prevId: typeof node.prevId === "string" ? node.prevId : null,
     nextId: typeof node.nextId === "string" ? node.nextId : null,
+    title: typeof node.title === "string" && node.title.trim().length > 0 ? node.title : null,
     question: node.question,
     answer: typeof node.answer === "string" ? node.answer : null,
     createdAt: typeof node.createdAt === "number" ? node.createdAt : Date.now(),

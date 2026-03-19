@@ -2,7 +2,6 @@ import React, { useMemo, useState } from "react";
 import ChatPane from "./components/ChatPane";
 import SettingsModal from "./components/SettingsModal";
 import TreeView from "./components/TreeView";
-import { ProviderMessage } from "./providers/AIProvider";
 import { DummyProvider } from "./providers/DummyProvider";
 import { OpenAICompatibleProvider } from "./providers/OpenAICompatibleProvider";
 import { Node, Session, Tree, Workspace } from "./models/types";
@@ -13,14 +12,12 @@ import {
   createTree,
   createWorkspace,
   loadWorkspace,
-  normalizeWorkspace,
   saveWorkspace,
 } from "./store/workspaceStore";
-import { BRANCH_INSTRUCTION, BRANCH_SUMMARIZER_PROMPT } from "./constants/prompts";
+import { BRANCH_SUMMARIZER_PROMPT } from "./constants/prompts";
+import { buildPromptAssembly } from "./utils/promptAssembly";
 
-const EXPORT_VERSION = "0.2.2";
 const BRANCH_SUMMARY_CONTEXT_NODES = 4;
-const MAX_HISTORY_NODES = 6;
 
 function truncateText(text: string, max = 60) {
   const trimmed = text.trim();
@@ -50,30 +47,6 @@ function getSessionNodes(session: Session, nodes: Record<string, Node>) {
     currentId = node.nextId;
   }
   return chain;
-}
-
-function buildHistoryMessages(nodes: Node[], limit: number): ProviderMessage[] {
-  const transcriptNodes = nodes.filter((node) => node.question.trim().length > 0);
-  const start = Math.max(0, transcriptNodes.length - limit);
-  const recent = transcriptNodes.slice(start);
-  const messages: ProviderMessage[] = [];
-  for (const node of recent) {
-    messages.push({ role: "user", content: node.question });
-    if (node.answer) {
-      messages.push({ role: "assistant", content: node.answer });
-    }
-  }
-  return messages;
-}
-
-function buildTrunkContext(tree: Tree, nodeCount: number) {
-  return [`Tree: ${tree.id}`, `Node count: ${nodeCount}`].join("\n");
-}
-
-function buildBranchContext(origin: { quoteText: string; originSummary: string }) {
-  const lines = ["Branch session: true", "Quoted span:", "<<<", origin.quoteText, ">>>"];
-  lines.push("", "Origin summary:", "<<<", origin.originSummary, ">>>");
-  return lines.join("\n");
 }
 
 function buildSummarizerContext(options: {
@@ -107,6 +80,29 @@ function computeColorKey(sessionId: string, paletteLength: number) {
   return Math.abs(hash) % paletteLength;
 }
 
+function computeSiblingBranchColorKey(options: {
+  sessions: Record<string, Session>;
+  sourceNodeId: string;
+  paletteLength: number;
+}) {
+  const { sessions, sourceNodeId, paletteLength } = options;
+  if (paletteLength <= 1) {
+    return 0;
+  }
+
+  const siblingColorKeys = Object.values(sessions)
+    .filter((session) => session.kind === "branch" && session.origin?.sourceNodeId === sourceNodeId)
+    .map((session) => Math.abs(session.colorKey) % paletteLength);
+
+  for (let colorKey = 1; colorKey < paletteLength; colorKey += 1) {
+    if (!siblingColorKeys.includes(colorKey)) {
+      return colorKey;
+    }
+  }
+
+  return (siblingColorKeys.length % (paletteLength - 1)) + 1;
+}
+
 export default function App() {
   const [workspace, setWorkspace] = useState<Workspace>(() => loadWorkspace());
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -114,6 +110,16 @@ export default function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | undefined>(undefined);
+  const [startStatus, setStartStatus] = useState<string | null>(null);
+  const [isStarting, setIsStarting] = useState(false);
+  const [appNotice, setAppNotice] = useState<string | null>(null);
+  const [startProviderMode, setStartProviderMode] = useState<"dummy" | "external">(
+    workspace.settings.providerMode
+  );
+  const [startBaseUrl, setStartBaseUrl] = useState(
+    workspace.settings.providerConfig.baseUrl ?? DEFAULT_SETTINGS.providerConfig.baseUrl ?? ""
+  );
+  const [startApiKey, setStartApiKey] = useState(workspace.settings.providerConfig.apiKey ?? "");
 
   const activeTree = workspace.activeTreeId
     ? workspace.trees[workspace.activeTreeId]
@@ -128,6 +134,19 @@ export default function App() {
     }
     return getSessionNodes(activeSession, workspace.nodes);
   }, [activeSession, workspace.nodes]);
+
+  const contextPreview = useMemo(() => {
+    if (!activeTree || !activeSession || !workspace.settings.showContextPreview) {
+      return null;
+    }
+    const prompt = buildPromptAssembly({
+      tree: activeTree,
+      session: activeSession,
+      sessionNodes: activeSessionNodes,
+      settings: workspace.settings,
+    });
+    return prompt;
+  }, [activeSession, activeSessionNodes, activeTree, workspace.settings]);
 
   const persistWorkspace = (next: Workspace) => {
     saveWorkspace(next);
@@ -265,6 +284,30 @@ export default function App() {
     });
   };
 
+  const handleRenameNode = (nodeId: string, title: string) => {
+    updateWorkspace((current) => {
+      const node = current.nodes[nodeId];
+      if (!node) {
+        return current;
+      }
+      const nextTitle = title.trim() || node.question;
+      if (nextTitle === (node.title || node.question)) {
+        return current;
+      }
+      return {
+        ...current,
+        nodes: {
+          ...current.nodes,
+          [node.id]: {
+            ...node,
+            title: nextTitle,
+            updatedAt: Date.now(),
+          },
+        },
+      };
+    });
+  };
+
   const handleNewQuestion = () => {
     resetUI();
     const { tree, session } = createTree();
@@ -318,7 +361,14 @@ export default function App() {
       colorKey: 0,
     });
     const paletteLength = workspace.settings.uiTheme.palette.length;
-    const branchColorKey = computeColorKey(branchSession.id, paletteLength);
+    const branchColorKey =
+      paletteLength > 1
+        ? computeSiblingBranchColorKey({
+            sessions: workspace.sessions,
+            sourceNodeId,
+            paletteLength,
+          })
+        : computeColorKey(branchSession.id, paletteLength);
     const seededBranchSession: Session = {
       ...branchSession,
       colorKey: branchColorKey,
@@ -432,7 +482,6 @@ export default function App() {
       return;
     }
     const now = Date.now();
-    const isFirstNode = !activeSession.headNodeId;
     const newNode = createNode({
       sessionId: activeSession.id,
       question: text,
@@ -525,36 +574,19 @@ export default function App() {
       return;
     }
 
-    const promptMessages = buildHistoryMessages(activeSessionNodes, MAX_HISTORY_NODES);
-    promptMessages.push({ role: "user", content: text });
-
-    let systemPrompt = workspace.settings.rootSeed;
-    let contextBlock = buildTrunkContext(
-      activeTree,
-      Object.values(workspace.nodes).filter((node) => node.sessionId === activeSession.id).length +
-        1
-    );
-
-    if (activeSession.kind === "branch" && activeSession.branchSeed) {
-      const originSummary = activeSession.branchSeed.originSummary;
-      contextBlock = buildBranchContext({
-        quoteText: activeSession.branchSeed.quoteText,
-        originSummary,
-      });
-      systemPrompt = `${systemPrompt}\n\n${BRANCH_INSTRUCTION}`;
-      if (isFirstNode && originSummary.trim().length === 0) {
-        contextBlock = buildBranchContext({
-          quoteText: activeSession.branchSeed.quoteText,
-          originSummary: "Origin summary pending.",
-        });
-      }
-    }
+    const prompt = buildPromptAssembly({
+      tree: activeTree,
+      session: activeSession,
+      sessionNodes: activeSessionNodes,
+      settings: workspace.settings,
+      pendingUserText: text,
+    });
 
     try {
       const response = await provider.generate({
-        systemPrompt,
-        contextBlock,
-        messages: promptMessages,
+        systemPrompt: prompt.systemPrompt,
+        contextBlock: prompt.contextBlock,
+        messages: prompt.messages,
         options: workspace.settings.providerConfig,
         onToken: (chunk) => {
           updateWorkspace((current) => {
@@ -679,61 +711,6 @@ export default function App() {
     }
   };
 
-  const handleExport = () => {
-    const safeWorkspace: Workspace = {
-      ...workspace,
-      settings: {
-        ...workspace.settings,
-        providerConfig: {
-          ...workspace.settings.providerConfig,
-          apiKey: "",
-        },
-      },
-    };
-    return JSON.stringify(
-      {
-        version: EXPORT_VERSION,
-        exportedAt: Date.now(),
-        workspace: safeWorkspace,
-      },
-      null,
-      2
-    );
-  };
-
-  const handleImport = (raw: string) => {
-    try {
-      const parsed = JSON.parse(raw) as { workspace?: Workspace };
-      if (!parsed.workspace) {
-        return { ok: false, error: "Missing workspace in import." };
-      }
-
-      const normalizedWorkspace = normalizeWorkspace(parsed.workspace);
-      if (!normalizedWorkspace) {
-        return { ok: false, error: "Invalid workspace data." };
-      }
-
-      const nextWorkspace: Workspace = {
-        ...normalizedWorkspace,
-        settings: {
-          ...normalizedWorkspace.settings,
-          providerConfig: {
-            ...normalizedWorkspace.settings.providerConfig,
-            apiKey: "",
-          },
-        },
-      };
-
-      setWorkspace(persistWorkspace(nextWorkspace));
-      setSelectedNodeId(null);
-      setScrollTargetId(null);
-      return { ok: true };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return { ok: false, error: message };
-    }
-  };
-
   const handleSaveSettings = (settings: Workspace["settings"]) => {
     updateWorkspace((current) => ({
       ...current,
@@ -746,6 +723,82 @@ export default function App() {
         },
       },
     }));
+    setStartProviderMode(settings.providerMode);
+    setStartBaseUrl(settings.providerConfig.baseUrl ?? "");
+    setStartApiKey(settings.providerConfig.apiKey ?? "");
+  };
+
+  const handleApplyStartSettings = (modeOverride?: "dummy" | "external") => {
+    const providerMode = modeOverride ?? startProviderMode;
+    const nextSettings: Workspace["settings"] = {
+      ...workspace.settings,
+      providerMode,
+      providerConfig: {
+        ...workspace.settings.providerConfig,
+        baseUrl:
+          providerMode === "external"
+            ? startBaseUrl.trim() || DEFAULT_SETTINGS.providerConfig.baseUrl
+            : workspace.settings.providerConfig.baseUrl,
+        apiKey: providerMode === "external" ? startApiKey.trim() : "",
+        maxTokens: 10000,
+      },
+    };
+
+    updateWorkspace((current) => ({
+      ...current,
+      settings: {
+        ...nextSettings,
+        providerConfig: { ...nextSettings.providerConfig },
+        uiTheme: {
+          baseFontSize: nextSettings.uiTheme.baseFontSize,
+          palette: [...nextSettings.uiTheme.palette],
+        },
+      },
+    }));
+    setStartProviderMode(providerMode);
+  };
+
+  const handleStart = async () => {
+    setStartStatus(null);
+
+    if (startProviderMode === "external") {
+      if (!startBaseUrl.trim() || !startApiKey.trim()) {
+        setStartStatus("Base URL and API Key are required for external mode.");
+        return;
+      }
+
+      setIsStarting(true);
+      const externalSettings: Workspace["settings"] = {
+        ...workspace.settings,
+        providerMode: "external",
+        providerConfig: {
+          ...workspace.settings.providerConfig,
+          baseUrl: startBaseUrl.trim(),
+          apiKey: startApiKey.trim(),
+          maxTokens: 10000,
+        },
+      };
+
+      try {
+        const result = await handleTestConnection(externalSettings);
+        if (!result.startsWith("Success:")) {
+          throw new Error(result);
+        }
+        handleApplyStartSettings("external");
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        handleApplyStartSettings("dummy");
+        setAppNotice(
+          `External connection failed. Falling back to Dummy mode. ${message.replace(/^Error:\s*/i, "")}`
+        );
+      } finally {
+        setIsStarting(false);
+      }
+    } else {
+      handleApplyStartSettings("dummy");
+    }
+
+    handleNewQuestion();
   };
 
   const sessionLabel =
@@ -758,35 +811,53 @@ export default function App() {
     activeSession?.kind === "branch" && activeSession.branchSeed
       ? activeSession.branchSeed.quoteText
       : "";
+  const hasActiveWorkspace = Boolean(activeTree && activeSession);
 
   return (
-    <div className="app" style={{ fontSize: `${workspace.settings.uiTheme.baseFontSize}px` }}>
-      <aside className="sidebar">
-        <h1>GPTree</h1>
-        <button
-          className="button-secondary"
-          type="button"
-          onClick={() => setIsSettingsOpen(true)}
-        >
-          Settings
-        </button>
-        <TreeView
-          trees={workspace.trees}
-          sessions={workspace.sessions}
-          nodes={workspace.nodes}
-          activeTreeId={workspace.activeTreeId}
-          activeSessionId={workspace.activeSessionId}
-          selectedNodeId={selectedNodeId}
-          palette={workspace.settings.uiTheme.palette}
-          onSelectTree={handleSelectTree}
-          onToggleTree={handleToggleTree}
-          onRenameTree={handleRenameTree}
-          onSelectSession={handleSelectSession}
-          onSelectNode={handleSelectNode}
-        />
-      </aside>
+    <div
+      className={`app ${hasActiveWorkspace ? "with-sidebar" : "without-sidebar"}`}
+      style={{ fontSize: `${workspace.settings.uiTheme.baseFontSize}px` }}
+    >
+      {hasActiveWorkspace ? (
+        <aside className="sidebar">
+          <h1>GPTree</h1>
+          <button
+            className="button-secondary"
+            type="button"
+            onClick={() => setIsSettingsOpen(true)}
+          >
+            Settings
+          </button>
+          <TreeView
+            trees={workspace.trees}
+            sessions={workspace.sessions}
+            nodes={workspace.nodes}
+            activeTreeId={workspace.activeTreeId}
+            activeSessionId={workspace.activeSessionId}
+            selectedNodeId={selectedNodeId}
+            palette={workspace.settings.uiTheme.palette}
+            onSelectTree={handleSelectTree}
+            onToggleTree={handleToggleTree}
+            onRenameTree={handleRenameTree}
+            onRenameNode={handleRenameNode}
+            onSelectSession={handleSelectSession}
+            onSelectNode={handleSelectNode}
+          />
+          <button className="sidebar-new-question" type="button" onClick={handleNewQuestion}>
+            New Question
+          </button>
+        </aside>
+      ) : null}
 
       <main className="main">
+        {appNotice ? (
+          <div className="app-notice">
+            <span>{appNotice}</span>
+            <button type="button" className="app-notice-close" onClick={() => setAppNotice(null)}>
+              Dismiss
+            </button>
+          </div>
+        ) : null}
         {activeTree && activeSession ? (
           <ChatPane
             nodes={activeSessionNodes}
@@ -794,23 +865,93 @@ export default function App() {
             sessionLabel={sessionLabel}
             sessionKind={activeSession.kind}
             branchQuote={branchQuote}
+            contextPreview={contextPreview}
             selectedNodeId={selectedNodeId}
             scrollToNodeId={scrollTargetId}
             errorMessage={errorMessage}
             isGenerating={isGenerating}
-            onNewQuestion={handleNewQuestion}
             onCreateBranch={handleCreateBranch}
-            onClearAll={handleClearAll}
             onSend={handleSend}
             onScrollComplete={() => setScrollTargetId(null)}
           />
         ) : (
-          <div className="empty-pane">
-            <h2>No active tree</h2>
-            <p>Start with a new top-level question.</p>
-            <button className="button-primary" type="button" onClick={handleNewQuestion}>
-              New Question
-            </button>
+          <div className="start-page">
+            <div className="start-hero">
+              <div className="start-eyebrow">GPTree</div>
+              <h2>Manage conversations in a git-like tree instead of one linear thread.</h2>
+              <p>
+                Start a top-level question, branch from any quote, and keep related lines of
+                reasoning in one workspace.
+              </p>
+              <div className="start-actions">
+                <button
+                  className="button-primary"
+                  type="button"
+                  onClick={handleStart}
+                  disabled={
+                    isStarting ||
+                    (startProviderMode === "external" &&
+                      (!startBaseUrl.trim() || !startApiKey.trim()))
+                  }
+                >
+                  {isStarting ? "Checking..." : "Start"}
+                </button>
+              </div>
+            </div>
+
+            <div className="start-setup">
+              <div className="start-setup-title">Choose model source</div>
+              <div className="start-mode-grid">
+                <button
+                  className={`start-mode-card ${
+                    startProviderMode === "dummy" ? "selected" : ""
+                  }`}
+                  type="button"
+                  onClick={() => setStartProviderMode("dummy")}
+                >
+                  <span className="start-mode-name">Dummy Test</span>
+                  <span className="start-mode-copy">
+                    Local demo mode for testing the tree workflow without external API setup.
+                  </span>
+                </button>
+                <button
+                  className={`start-mode-card ${
+                    startProviderMode === "external" ? "selected" : ""
+                  }`}
+                  type="button"
+                  onClick={() => setStartProviderMode("external")}
+                >
+                  <span className="start-mode-name">External API</span>
+                  <span className="start-mode-copy">
+                    Connect your own compatible endpoint and use a real model provider.
+                  </span>
+                </button>
+              </div>
+
+              {startProviderMode === "external" ? (
+                <div className="start-form">
+                  <label className="start-field">
+                    <span>Base URL</span>
+                    <input
+                      value={startBaseUrl}
+                      onChange={(event) => setStartBaseUrl(event.target.value)}
+                      placeholder={DEFAULT_SETTINGS.providerConfig.baseUrl}
+                    />
+                  </label>
+                  <label className="start-field">
+                    <span>API Key</span>
+                    <input
+                      type="password"
+                      value={startApiKey}
+                      onChange={(event) => setStartApiKey(event.target.value)}
+                      placeholder="sk-..."
+                    />
+                  </label>
+                </div>
+              ) : null}
+
+              {startStatus ? <div className="start-status">{startStatus}</div> : null}
+            </div>
           </div>
         )}
       </main>
@@ -818,18 +959,11 @@ export default function App() {
       <SettingsModal
         isOpen={isSettingsOpen}
         settings={workspace.settings}
-        branchSeeds={Object.values(workspace.sessions)
-          .filter((session) => session.branchSeed)
-          .map((session) => ({
-            sessionId: session.id,
-            seed: session.branchSeed!,
-          }))}
         onClose={() => setIsSettingsOpen(false)}
         onSave={handleSaveSettings}
         onReset={handleResetSettings}
+        onClearAll={handleClearAll}
         onTest={handleTestConnection}
-        onExport={handleExport}
-        onImport={handleImport}
       />
     </div>
   );

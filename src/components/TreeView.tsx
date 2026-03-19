@@ -12,6 +12,7 @@ interface TreeViewProps {
   onSelectTree: (treeId: string) => void;
   onToggleTree: (treeId: string) => void;
   onRenameTree: (treeId: string, title: string) => void;
+  onRenameNode: (nodeId: string, title: string) => void;
   onSelectSession: (sessionId: string) => void;
   onSelectNode: (nodeId: string) => void;
 }
@@ -61,6 +62,10 @@ function renderLabel(text: string) {
   );
 }
 
+function getNodeLabel(node: Node) {
+  return node.title && node.title.trim().length > 0 ? node.title : node.question;
+}
+
 function getSessionNodes(session: Session, nodes: Record<string, Node>) {
   if (!session.headNodeId) {
     return [];
@@ -105,7 +110,7 @@ function getOriginLabel(session: Session, nodes: Record<string, Node>) {
   if (!source) {
     return "Branch";
   }
-  return `Branch from: ${truncateLabel(source.question)}`;
+  return `Branch from: ${truncateLabel(getNodeLabel(source))}`;
 }
 
 const COLLAPSED_ARROW = "\u25B8";
@@ -119,6 +124,7 @@ function SessionChain({
   selectedNodeId,
   onSelectSession,
   onSelectNode,
+  onRenameNode,
   branchSessionsBySource,
   palette,
 }: {
@@ -129,14 +135,23 @@ function SessionChain({
   selectedNodeId: string | null;
   onSelectSession: (sessionId: string) => void;
   onSelectNode: (nodeId: string) => void;
+  onRenameNode: (nodeId: string, title: string) => void;
   branchSessionsBySource: Map<string, Session[]>;
   palette: string[];
 }) {
+  const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
+  const [draftNodeTitle, setDraftNodeTitle] = useState("");
   const chainNodes = getSessionNodes(session, nodes);
   const isActiveSession = session.id === activeSessionId;
   const sessionColor = palette.length
     ? palette[Math.abs(session.colorKey) % palette.length]
     : "#5b9bff";
+
+  const finishEditingNode = (node: Node) => {
+    onRenameNode(node.id, normalizeLabelText(draftNodeTitle) || node.question);
+    setEditingNodeId(null);
+    setDraftNodeTitle("");
+  };
 
   return (
     <div>
@@ -169,13 +184,39 @@ function SessionChain({
               className={`commit-dot ${node.answer ? "filled" : "pending"}`}
               style={{ borderColor: sessionColor, color: sessionColor }}
             />
-            <button
-              className="tree-label"
-              type="button"
-              onClick={() => onSelectNode(node.id)}
-            >
-              {renderLabel(node.question)}
-            </button>
+            {editingNodeId === node.id ? (
+              <input
+                className="tree-node-input"
+                value={draftNodeTitle}
+                onChange={(event) => setDraftNodeTitle(event.target.value)}
+                onBlur={() => finishEditingNode(node)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    finishEditingNode(node);
+                  }
+                  if (event.key === "Escape") {
+                    event.preventDefault();
+                    setEditingNodeId(null);
+                    setDraftNodeTitle("");
+                  }
+                }}
+                autoFocus
+              />
+            ) : (
+              <button
+                className="tree-label"
+                type="button"
+                onClick={() => onSelectNode(node.id)}
+                onDoubleClick={() => {
+                  setEditingNodeId(node.id);
+                  setDraftNodeTitle(getNodeLabel(node));
+                }}
+                title="Double-click to rename"
+              >
+                {renderLabel(getNodeLabel(node))}
+              </button>
+            )}
           </div>
 
           {(branchSessionsBySource.get(node.id) || []).map((branchSession) => (
@@ -188,6 +229,7 @@ function SessionChain({
               selectedNodeId={selectedNodeId}
               onSelectSession={onSelectSession}
               onSelectNode={onSelectNode}
+              onRenameNode={onRenameNode}
               branchSessionsBySource={branchSessionsBySource}
               palette={palette}
             />
@@ -209,6 +251,7 @@ export default function TreeView({
   onSelectTree,
   onToggleTree,
   onRenameTree,
+  onRenameNode,
   onSelectSession,
   onSelectNode,
 }: TreeViewProps) {
@@ -317,6 +360,7 @@ export default function TreeView({
                 selectedNodeId={selectedNodeId}
                 onSelectSession={onSelectSession}
                 onSelectNode={onSelectNode}
+                onRenameNode={onRenameNode}
                 branchSessionsBySource={branchSessionsBySource}
                 palette={palette}
               />

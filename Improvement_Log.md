@@ -93,7 +93,7 @@ Status: [TODO]
 - Reason: Helps diagnose prompt issues and user reports.
 - Test: Toggle on → see systemPrompt + contextBlock preview.
 
-Status: [TODO]
+Status: [DONE]
 
 ---
 
@@ -102,7 +102,36 @@ Status: [TODO]
 - Reason: Prevent accidental “send entire tree” bugs and keep costs controlled.
 - Test: Unit/log assertion: request payload does not include full workspace JSON.
 
-Status: [TODO]
+Status: [DONE]
+
+---
+
+### CHG-007 — Focused beginning page with provider setup
+- Change: Hide the sidebar on first load and center a dedicated start page.
+- Change: Require the user to choose Dummy Test or External API before entering the workspace.
+- Change: If External API is selected, require base URL and API key before Start is enabled.
+- Change: Start performs a connection check; on failure, show a top-level warning and fall back to Dummy mode.
+
+Status: [DONE]
+
+---
+
+### CHG-008 — Simplified action placement and lighter settings
+- Change: Move “New Question” to the bottom of the sidebar.
+- Change: Replace the persistent branch button with a selection-triggered “Create Branch from Quote” action.
+- Change: Move “Clear All” into Settings as a destructive action.
+- Change: Simplify Settings to the most-used controls and hide the previous heavy debug/import-export surface.
+
+Status: [DONE]
+
+---
+
+### CHG-009 — Tree polish: editable node names and sibling branch colors
+- Change: Nodes support optional editable titles for clearer tree naming.
+- Change: Long node labels truncate in the tree with “...” rather than expanding the sidebar width.
+- Change: Sibling branches from the same source node prefer different palette colors before reusing colors.
+
+Status: [DONE]
 
 ---
 

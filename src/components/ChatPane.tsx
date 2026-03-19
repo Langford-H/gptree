@@ -9,16 +9,21 @@ interface ChatPaneProps {
   sessionLabel: string;
   sessionKind: "trunk" | "branch";
   branchQuote?: string;
+  contextPreview?: {
+    systemPrompt: string;
+    contextBlock: string;
+    messages: Array<{ role: "user" | "assistant"; content: string }>;
+  } | null;
   selectedNodeId?: string | null;
   scrollToNodeId?: string | null;
   errorMessage?: string;
   isGenerating: boolean;
-  onNewQuestion: () => void;
   onCreateBranch: (quoteText: string, sourceNodeId: string) => void;
-  onClearAll: () => void;
   onSend: (text: string) => void;
   onScrollComplete: () => void;
 }
+
+type SelectionSource = "question" | "answer";
 
 function findNodeIdFromSelection(selection: Selection | null) {
   if (!selection) {
@@ -35,6 +40,34 @@ function findNodeIdFromSelection(selection: Selection | null) {
       return container.getAttribute("data-node-id");
     }
   }
+  return null;
+}
+
+function findSelectionSource(selection: Selection) {
+  const range = selection.getRangeAt(0);
+  const containers = [
+    range.startContainer,
+    range.endContainer,
+    selection.anchorNode,
+    selection.focusNode,
+  ];
+
+  for (const node of containers) {
+    if (!node) {
+      continue;
+    }
+    const element = node instanceof Element ? node : node.parentElement;
+    if (!element) {
+      continue;
+    }
+    if (element.closest(".message-assistant")) {
+      return "answer" satisfies SelectionSource;
+    }
+    if (element.closest(".message-user")) {
+      return "question" satisfies SelectionSource;
+    }
+  }
+
   return null;
 }
 
@@ -206,18 +239,23 @@ export default function ChatPane({
   sessionLabel,
   sessionKind,
   branchQuote,
+  contextPreview,
   selectedNodeId,
   scrollToNodeId,
   errorMessage,
   isGenerating,
-  onNewQuestion,
   onCreateBranch,
-  onClearAll,
   onSend,
   onScrollComplete,
 }: ChatPaneProps) {
   const transcriptRef = useRef<HTMLDivElement>(null);
-  const selectionRef = useRef<{ text: string; nodeId: string } | null>(null);
+  const selectionRef = useRef<{ text: string; nodeId: string; source: SelectionSource } | null>(
+    null
+  );
+  const [branchButtonPosition, setBranchButtonPosition] = useState<{
+    top: number;
+    left: number;
+  } | null>(null);
   const [composerText, setComposerText] = useState("");
   const [selectionError, setSelectionError] = useState("");
   const [selectionHint, setSelectionHint] = useState("");
@@ -246,6 +284,12 @@ export default function ChatPane({
     onScrollComplete();
   }, [scrollToNodeId, onScrollComplete]);
 
+  useEffect(() => {
+    if (!selectionRef.current) {
+      setBranchButtonPosition(null);
+    }
+  }, [nodes]);
+
   const handleSend = () => {
     const text = composerText.trim();
     if (!text || isGenerating) {
@@ -264,30 +308,53 @@ export default function ChatPane({
   };
 
   const captureSelection = () => {
-  const selection = window.getSelection();
-  if (!selection || selection.isCollapsed) {
-    selectionRef.current = null;
-    setSelectionHint("");
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed) {
+      selectionRef.current = null;
+      setSelectionHint("");
+      setBranchButtonPosition(null);
       return;
     }
     const quoteText = extractSelectionText(selection);
     if (!quoteText) {
       selectionRef.current = null;
       setSelectionHint("");
+      setBranchButtonPosition(null);
       return;
     }
     const nodeId = findNodeIdFromSelection(selection);
     if (!nodeId) {
       selectionRef.current = null;
       setSelectionHint("");
+      setBranchButtonPosition(null);
+      return;
+    }
+    const source = findSelectionSource(selection);
+    if (!source) {
+      selectionRef.current = null;
+      setSelectionHint("");
+      setBranchButtonPosition(null);
       return;
     }
     const sourceNode = nodes.find((item) => item.id === nodeId);
-    const sourceText = sourceNode?.answer || sourceNode?.question || "";
+    const sourceText =
+      source === "answer" ? sourceNode?.answer || "" : sourceNode?.question || "";
     const mappedText = findSourceSlice(sourceText, quoteText);
-    selectionRef.current = { text: mappedText, nodeId };
+    selectionRef.current = { text: mappedText, nodeId, source };
     setSelectionError("");
-    setSelectionHint("Quote selected. Click Create Branch from Quote.");
+    setSelectionHint("");
+    const range = selection.getRangeAt(0);
+    const rect = range.getBoundingClientRect();
+    const containerRect = transcriptRef.current?.getBoundingClientRect();
+    if (containerRect) {
+      setBranchButtonPosition({
+        top: rect.bottom - containerRect.top + transcriptRef.current!.scrollTop + 8,
+        left: Math.min(
+          Math.max(12, rect.left - containerRect.left + transcriptRef.current!.scrollLeft),
+          containerRect.width - 220
+        ),
+      });
+    }
   };
 
   const handleCreateBranch = () => {
@@ -299,6 +366,7 @@ export default function ChatPane({
     setSelectionError("");
     selectionRef.current = null;
     setSelectionHint("");
+    setBranchButtonPosition(null);
     onCreateBranch(selection.text, selection.nodeId);
   };
 
@@ -312,22 +380,6 @@ export default function ChatPane({
             <span>{sessionLabel}</span>
           </div>
         </div>
-        <div className="pane-actions">
-          <button className="button-secondary" type="button" onClick={onNewQuestion}>
-            New Question
-          </button>
-          <button
-            className="button-secondary"
-            type="button"
-            onClick={handleCreateBranch}
-            title="Select text in the transcript to create a branch session."
-          >
-            Create Branch from Quote
-          </button>
-          <button className="button-secondary" type="button" onClick={onClearAll}>
-            Clear All
-          </button>
-        </div>
       </div>
 
       {sessionKind === "branch" && branchQuote ? (
@@ -337,7 +389,50 @@ export default function ChatPane({
         </div>
       ) : null}
 
+      {contextPreview ? (
+        <details className="context-preview">
+          <summary>Context sent to AI</summary>
+          <div className="context-preview-grid">
+            <div className="context-preview-section">
+              <div className="context-preview-label">System Prompt</div>
+              <pre>{contextPreview.systemPrompt || "(empty)"}</pre>
+            </div>
+            <div className="context-preview-section">
+              <div className="context-preview-label">Context Block</div>
+              <pre>{contextPreview.contextBlock || "(empty)"}</pre>
+            </div>
+            <div className="context-preview-section">
+              <div className="context-preview-label">Messages</div>
+              <pre>
+                {contextPreview.messages.length > 0
+                  ? contextPreview.messages
+                      .map(
+                        (message, index) =>
+                          `[${index + 1}] ${message.role.toUpperCase()}\n${message.content}`
+                      )
+                      .join("\n\n")
+                  : "(empty)"}
+              </pre>
+            </div>
+          </div>
+        </details>
+      ) : null}
+
       <div className="chat-transcript" ref={transcriptRef} onMouseUp={captureSelection}>
+        {branchButtonPosition ? (
+          <button
+            className="selection-branch-button"
+            type="button"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={handleCreateBranch}
+            style={{
+              top: `${branchButtonPosition.top}px`,
+              left: `${branchButtonPosition.left}px`,
+            }}
+          >
+            Create Branch from Quote
+          </button>
+        ) : null}
         {nodes.length === 0 ? (
           <div className="empty-transcript">
             No messages yet. Ask a question to start this chat.

@@ -129,6 +129,14 @@ palette.length
 -   Test connection feedback moves to the footer status area (next to save status)
 -   Rendered message HTML trims trailing whitespace/empty breaks to remove phantom bottom line spacing
 -   Removed experimental bubble CSS (inline-block + paragraph margins) after confirming the render-side fix
+-   Beginning page hides the sidebar and centers a first-run setup flow
+-   Beginning page asks user to choose Dummy Test or External API before entering the workspace
+-   External start requires base URL + API key; startup tests the connection and falls back to Dummy mode with a top-level warning banner if the check fails
+-   Settings UI is simplified to core controls only (root seed, provider mode, credentials, model, context preview, font size)
+-   "New Question" action moves to the bottom of the sidebar; "Create Branch from Quote" appears contextually on text selection; "Clear All" lives in Settings as a destructive red button
+-   Assistant replies render as wide response blocks, with increased spacing above the composer and between assistant/user turns
+-   Sibling branches created from the same source node should prefer different palette colors before reusing a color
+-   Node labels remain truncated in the tree and are editable via inline rename
 
 ------------------------------------------------------------------------
 

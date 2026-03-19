@@ -11,6 +11,7 @@ export interface WorkspaceSettings {
   rootSeed: string;
   providerMode: "dummy" | "external";
   providerConfig: ProviderConfig;
+  showContextPreview: boolean;
   uiTheme: {
     baseFontSize: number;
     palette: string[];
@@ -52,6 +53,7 @@ export interface Node {
   sessionId: string;
   prevId: string | null;
   nextId: string | null;
+  title: string | null;
   question: string;
   answer: string | null;
   createdAt: number;
