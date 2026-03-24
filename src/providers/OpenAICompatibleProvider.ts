@@ -20,11 +20,11 @@ function buildPromptMessages(
   messages: ProviderMessage[]
 ): PromptMessage[] {
   const promptMessages: PromptMessage[] = [];
-  if (systemPrompt.trim().length > 0) {
-    promptMessages.push({ role: "system", content: systemPrompt });
-  }
-  if (contextBlock.trim().length > 0) {
-    promptMessages.push({ role: "system", content: contextBlock });
+  const mergedSystemPrompt = [systemPrompt.trim(), contextBlock.trim()]
+    .filter((value) => value.length > 0)
+    .join("\n\n");
+  if (mergedSystemPrompt.length > 0) {
+    promptMessages.push({ role: "system", content: mergedSystemPrompt });
   }
   for (const message of messages) {
     promptMessages.push({ role: message.role, content: message.content });
@@ -56,15 +56,17 @@ function buildPayload(
 
 async function readErrorMessage(response: Response) {
   const text = await response.text();
+  const statusPrefix = `HTTP ${response.status}`;
   if (!text) {
-    return `Request failed with status ${response.status}.`;
+    return `${statusPrefix}: empty error response.`;
   }
 
   try {
     const data = JSON.parse(text) as { error?: { message?: string }; message?: string };
-    return data.error?.message || data.message || text;
+    const message = data.error?.message || data.message || text;
+    return `${statusPrefix}: ${message}`;
   } catch {
-    return text;
+    return `${statusPrefix}: ${text}`;
   }
 }
 

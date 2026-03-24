@@ -143,6 +143,25 @@ function sanitizeRenderedHtml(html: string) {
     .replace(/(?:<p>\s*<\/p>\s*)+$/gi, "")
     .replace(/\s+$/g, "");
 }
+
+function compactQuoteText(text: string) {
+  return text.replace(/[\t\r\n]+/g, " ").replace(/\s{2,}/g, " ").trim();
+}
+
+function splitThinkingSections(text: string) {
+  const match = text.match(/<think>([\s\S]*?)<\/think>/i);
+  if (!match) {
+    return {
+      thinking: "",
+      answer: text,
+    };
+  }
+
+  const thinking = match[1].trim();
+  const answer = `${text.slice(0, match.index)}${text.slice((match.index ?? 0) + match[0].length)}`.trim();
+  return { thinking, answer };
+}
+
 function normalizeWithMap(source: string) {
   const normalizedChars: string[] = [];
   const indexMap: number[] = [];
@@ -385,7 +404,7 @@ export default function ChatPane({
       {sessionKind === "branch" && branchQuote ? (
         <div className="branch-banner">
           <div className="branch-title">Branch discussion</div>
-          <div className="branch-quote">{branchQuote}</div>
+          <div className="branch-quote">{compactQuoteText(branchQuote)}</div>
         </div>
       ) : null}
 
@@ -440,6 +459,7 @@ export default function ChatPane({
         ) : (
           nodes.map((node, index) => {
             const isLast = index === nodes.length - 1;
+            const answerState = splitThinkingSections(node.answer || "");
             return (
             <div
               key={node.id}
@@ -456,10 +476,25 @@ export default function ChatPane({
               />
               <div className="message message-assistant">
                 {node.answer ? (
-                  <div
-                    className="message-content"
-                    dangerouslySetInnerHTML={{ __html: renderWithMath(markdown, node.answer) }}
-                  />
+                  <>
+                    {answerState.thinking ? (
+                      <details className="message-thinking" open={isGenerating && isLast}>
+                        <summary>{isGenerating && isLast ? "Thinking..." : "Thought process"}</summary>
+                        <div
+                          className="message-content"
+                          dangerouslySetInnerHTML={{
+                            __html: renderMarkdown(markdown, answerState.thinking),
+                          }}
+                        />
+                      </details>
+                    ) : null}
+                    <div
+                      className="message-content"
+                      dangerouslySetInnerHTML={{
+                        __html: renderWithMath(markdown, answerState.answer || node.answer),
+                      }}
+                    />
+                  </>
                 ) : (
                   <div className="message-content">
                     {isGenerating && isLast ? "Generating response..." : "Awaiting response."}

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import ChatPane from "./components/ChatPane";
 import SettingsModal from "./components/SettingsModal";
 import TreeView from "./components/TreeView";
@@ -18,6 +18,21 @@ import { BRANCH_SUMMARIZER_PROMPT } from "./constants/prompts";
 import { buildPromptAssembly } from "./utils/promptAssembly";
 
 const BRANCH_SUMMARY_CONTEXT_NODES = 4;
+const DEFAULT_EXTERNAL_MODEL = DEFAULT_SETTINGS.providerConfig.model ?? "";
+const MINIMAX_BASE_URL = "https://api.minimaxi.com/v1";
+const MINIMAX_GLOBAL_BASE_URL = "https://api.minimax.io/v1";
+const MODELSCOPE_BASE_URL = DEFAULT_SETTINGS.providerConfig.baseUrl ?? "";
+const MINIMAX_DEFAULT_MODEL = "MiniMax-M2.7";
+const START_BASE_URL_PRESETS = {
+  minimax_cn: MINIMAX_BASE_URL,
+  minimax_global: MINIMAX_GLOBAL_BASE_URL,
+  modelscope: MODELSCOPE_BASE_URL,
+} as const;
+const START_BASE_URL_OPTIONS = [
+  { id: "minimax_cn", label: "MiniMax CN", value: MINIMAX_BASE_URL },
+  { id: "minimax_global", label: "MiniMax Global", value: MINIMAX_GLOBAL_BASE_URL },
+  { id: "modelscope", label: "ModelScope", value: MODELSCOPE_BASE_URL },
+] as const;
 
 function truncateText(text: string, max = 60) {
   const trimmed = text.trim();
@@ -47,6 +62,41 @@ function getSessionNodes(session: Session, nodes: Record<string, Node>) {
     currentId = node.nextId;
   }
   return chain;
+}
+
+function getDescendantBranchSessionIds(options: {
+  rootSessionId: string;
+  sessions: Record<string, Session>;
+  nodes: Record<string, Node>;
+}) {
+  const { rootSessionId, sessions, nodes } = options;
+  const collected = new Set<string>();
+  const queue = [rootSessionId];
+
+  while (queue.length > 0) {
+    const sessionId = queue.shift();
+    if (!sessionId || collected.has(sessionId)) {
+      continue;
+    }
+    collected.add(sessionId);
+    const session = sessions[sessionId];
+    if (!session) {
+      continue;
+    }
+    const sessionNodeIds = new Set(getSessionNodes(session, nodes).map((node) => node.id));
+    Object.values(sessions).forEach((candidate) => {
+      if (
+        candidate.kind === "branch" &&
+        candidate.origin &&
+        sessionNodeIds.has(candidate.origin.sourceNodeId) &&
+        !collected.has(candidate.id)
+      ) {
+        queue.push(candidate.id);
+      }
+    });
+  }
+
+  return collected;
 }
 
 function buildSummarizerContext(options: {
@@ -103,6 +153,41 @@ function computeSiblingBranchColorKey(options: {
   return (siblingColorKeys.length % (paletteLength - 1)) + 1;
 }
 
+function inferExternalModel(baseUrl: string) {
+  const normalizedBaseUrl = baseUrl.trim().toLowerCase();
+  if (normalizedBaseUrl.includes("minimaxi.com")) {
+    return MINIMAX_DEFAULT_MODEL;
+  }
+  return DEFAULT_EXTERNAL_MODEL;
+}
+
+function getExternalModel(baseUrl: string, model: string) {
+  const trimmedModel = model.trim();
+  const inferredModel = inferExternalModel(baseUrl);
+  const shouldUseInferredModel =
+    inferredModel !== DEFAULT_EXTERNAL_MODEL &&
+    (trimmedModel.length === 0 || trimmedModel === DEFAULT_EXTERNAL_MODEL);
+
+  if (shouldUseInferredModel) {
+    return inferredModel;
+  }
+
+  if (trimmedModel.length > 0) {
+    return trimmedModel;
+  }
+  return inferredModel;
+}
+
+function resolveStartBaseUrl(value: string) {
+  const trimmedValue = value.trim();
+  if (!trimmedValue) {
+    return "";
+  }
+  const presetValue =
+    START_BASE_URL_PRESETS[trimmedValue as keyof typeof START_BASE_URL_PRESETS];
+  return presetValue ?? trimmedValue;
+}
+
 export default function App() {
   const [workspace, setWorkspace] = useState<Workspace>(() => loadWorkspace());
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -120,6 +205,18 @@ export default function App() {
     workspace.settings.providerConfig.baseUrl ?? DEFAULT_SETTINGS.providerConfig.baseUrl ?? ""
   );
   const [startApiKey, setStartApiKey] = useState(workspace.settings.providerConfig.apiKey ?? "");
+  const [isBaseUrlMenuOpen, setIsBaseUrlMenuOpen] = useState(false);
+  const startBaseUrlFieldRef = useRef<HTMLLabelElement | null>(null);
+
+  useEffect(() => {
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!startBaseUrlFieldRef.current?.contains(event.target as Node)) {
+        setIsBaseUrlMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => document.removeEventListener("mousedown", handlePointerDown);
+  }, []);
 
   const activeTree = workspace.activeTreeId
     ? workspace.trees[workspace.activeTreeId]
@@ -304,6 +401,73 @@ export default function App() {
             updatedAt: Date.now(),
           },
         },
+      };
+    });
+  };
+
+  const handleDeleteBranch = (sessionId: string) => {
+    const session = workspace.sessions[sessionId];
+    if (!session || session.kind !== "branch") {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Delete this branch and all of its nested child branches? This cannot be undone."
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    resetUI();
+    updateWorkspace((current) => {
+      const targetSession = current.sessions[sessionId];
+      if (!targetSession || targetSession.kind !== "branch") {
+        return current;
+      }
+
+      const sessionIdsToDelete = getDescendantBranchSessionIds({
+        rootSessionId: sessionId,
+        sessions: current.sessions,
+        nodes: current.nodes,
+      });
+
+      const nextSessions = { ...current.sessions };
+      const nextNodes = { ...current.nodes };
+
+      sessionIdsToDelete.forEach((id) => {
+        const deletingSession = current.sessions[id];
+        if (!deletingSession) {
+          return;
+        }
+        getSessionNodes(deletingSession, current.nodes).forEach((node) => {
+          delete nextNodes[node.id];
+        });
+        delete nextSessions[id];
+      });
+
+      const tree = current.trees[targetSession.treeId];
+      const nextTrees = tree
+        ? {
+            ...current.trees,
+            [tree.id]: {
+              ...tree,
+              sessionIds: tree.sessionIds.filter((id) => !sessionIdsToDelete.has(id)),
+              updatedAt: Date.now(),
+            },
+          }
+        : current.trees;
+
+      const nextActiveSessionId =
+        current.activeSessionId && sessionIdsToDelete.has(current.activeSessionId)
+          ? tree?.trunkSessionId ?? current.activeSessionId
+          : current.activeSessionId;
+
+      return {
+        ...current,
+        trees: nextTrees,
+        sessions: nextSessions,
+        nodes: nextNodes,
+        activeSessionId: nextActiveSessionId,
       };
     });
   };
@@ -658,6 +822,9 @@ export default function App() {
       return;
     }
     resetUI();
+    setIsSettingsOpen(false);
+    setIsStarting(false);
+    setStartStatus(null);
     setWorkspace(
       persistWorkspace({
         ...workspace,
@@ -690,24 +857,29 @@ export default function App() {
       return "Add a base URL and API key first.";
     }
 
+    const baseUrl = (providerConfig.baseUrl || "").trim();
+    const model = getExternalModel(baseUrl, providerConfig.model ?? "");
+
     try {
       const response = await OpenAICompatibleProvider.generate({
-        systemPrompt: draftSettings.rootSeed,
-        contextBlock: "Test connection.",
+        systemPrompt: "You are a helpful assistant.\nConfirm connectivity in one short sentence.",
+        contextBlock: "",
         messages: [{ role: "user", content: "ping" }],
         options: {
           ...providerConfig,
-          maxTokens: Math.min(providerConfig.maxTokens || 32, 32),
+          model,
+          stream: false,
+          maxTokens: 32,
         },
       });
       const preview = response.text.slice(0, 80).replace(/\s+/g, " ");
-      return `Success: ${preview}`;
+      return `Success: ${baseUrl}/chat/completions | model=${model} | ${preview}`;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (/cors|failed to fetch/i.test(message)) {
-        return "Request failed. This may be a browser CORS issue.";
+        return `Error: ${baseUrl}/chat/completions | model=${model} | Request failed. This may be a browser CORS issue.`;
       }
-      return `Error: ${message}`;
+      return `Error: ${baseUrl}/chat/completions | model=${model} | ${message}`;
     }
   };
 
@@ -730,6 +902,13 @@ export default function App() {
 
   const handleApplyStartSettings = (modeOverride?: "dummy" | "external") => {
     const providerMode = modeOverride ?? startProviderMode;
+    const externalBaseUrl =
+      resolveStartBaseUrl(startBaseUrl) ||
+      DEFAULT_SETTINGS.providerConfig.baseUrl;
+    const externalModel = getExternalModel(
+      externalBaseUrl,
+      workspace.settings.providerConfig.model ?? DEFAULT_EXTERNAL_MODEL
+    );
     const nextSettings: Workspace["settings"] = {
       ...workspace.settings,
       providerMode,
@@ -737,9 +916,13 @@ export default function App() {
         ...workspace.settings.providerConfig,
         baseUrl:
           providerMode === "external"
-            ? startBaseUrl.trim() || DEFAULT_SETTINGS.providerConfig.baseUrl
+            ? externalBaseUrl
             : workspace.settings.providerConfig.baseUrl,
         apiKey: providerMode === "external" ? startApiKey.trim() : "",
+        model:
+          providerMode === "external"
+            ? externalModel
+            : workspace.settings.providerConfig.model,
         maxTokens: 10000,
       },
     };
@@ -758,7 +941,7 @@ export default function App() {
     setStartProviderMode(providerMode);
   };
 
-  const handleStart = async () => {
+  const handleStart = async (skipConnectionTest = false) => {
     setStartStatus(null);
 
     if (startProviderMode === "external") {
@@ -768,16 +951,28 @@ export default function App() {
       }
 
       setIsStarting(true);
+      const selectedBaseUrl = resolveStartBaseUrl(startBaseUrl) || startBaseUrl.trim();
       const externalSettings: Workspace["settings"] = {
         ...workspace.settings,
         providerMode: "external",
         providerConfig: {
           ...workspace.settings.providerConfig,
-          baseUrl: startBaseUrl.trim(),
+          baseUrl: selectedBaseUrl,
           apiKey: startApiKey.trim(),
+          model: getExternalModel(
+            selectedBaseUrl,
+            workspace.settings.providerConfig.model ?? DEFAULT_EXTERNAL_MODEL
+          ),
           maxTokens: 10000,
         },
       };
+
+      if (skipConnectionTest) {
+        handleApplyStartSettings("external");
+        setIsStarting(false);
+        handleNewQuestion();
+        return;
+      }
 
       try {
         const result = await handleTestConnection(externalSettings);
@@ -787,10 +982,10 @@ export default function App() {
         handleApplyStartSettings("external");
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        handleApplyStartSettings("dummy");
-        setAppNotice(
-          `External connection failed. Falling back to Dummy mode. ${message.replace(/^Error:\s*/i, "")}`
-        );
+        handleApplyStartSettings("external");
+        setStartStatus(message.replace(/^Error:\s*/i, ""));
+        setIsStarting(false);
+        return;
       } finally {
         setIsStarting(false);
       }
@@ -812,6 +1007,8 @@ export default function App() {
       ? activeSession.branchSeed.quoteText
       : "";
   const hasActiveWorkspace = Boolean(activeTree && activeSession);
+  const canStartExternal = Boolean(resolveStartBaseUrl(startBaseUrl) && startApiKey.trim());
+  const canStartAnyway = startProviderMode === "external" && Boolean(startStatus && canStartExternal);
 
   return (
     <div
@@ -842,6 +1039,7 @@ export default function App() {
             onRenameNode={handleRenameNode}
             onSelectSession={handleSelectSession}
             onSelectNode={handleSelectNode}
+            onDeleteBranch={handleDeleteBranch}
           />
           <button className="sidebar-new-question" type="button" onClick={handleNewQuestion}>
             New Question
@@ -885,16 +1083,17 @@ export default function App() {
               </p>
               <div className="start-actions">
                 <button
-                  className="button-primary"
+                  className={`button-primary start-primary-button ${
+                    canStartAnyway ? "start-primary-button-anyway" : ""
+                  }`}
                   type="button"
-                  onClick={handleStart}
+                  onClick={() => void handleStart(canStartAnyway)}
                   disabled={
                     isStarting ||
-                    (startProviderMode === "external" &&
-                      (!startBaseUrl.trim() || !startApiKey.trim()))
+                    (startProviderMode === "external" && !canStartExternal)
                   }
                 >
-                  {isStarting ? "Checking..." : "Start"}
+                  {isStarting ? "Checking..." : canStartAnyway ? "Start Anyway" : "Start"}
                 </button>
               </div>
             </div>
@@ -930,13 +1129,45 @@ export default function App() {
 
               {startProviderMode === "external" ? (
                 <div className="start-form">
-                  <label className="start-field">
+                  <label className="start-field start-field-combobox" ref={startBaseUrlFieldRef}>
                     <span>Base URL</span>
-                    <input
-                      value={startBaseUrl}
-                      onChange={(event) => setStartBaseUrl(event.target.value)}
-                      placeholder={DEFAULT_SETTINGS.providerConfig.baseUrl}
-                    />
+                    <div className="start-combobox-shell">
+                      <input
+                        value={startBaseUrl}
+                        onChange={(event) => {
+                          setStartBaseUrl(event.target.value);
+                          setIsBaseUrlMenuOpen(true);
+                        }}
+                        onFocus={() => setIsBaseUrlMenuOpen(true)}
+                        placeholder={DEFAULT_SETTINGS.providerConfig.baseUrl}
+                      />
+                      <button
+                        className="start-combobox-toggle"
+                        type="button"
+                        onClick={() => setIsBaseUrlMenuOpen((current) => !current)}
+                        aria-label="Toggle base URL options"
+                      >
+                        ▾
+                      </button>
+                    </div>
+                    {isBaseUrlMenuOpen ? (
+                      <div className="start-combobox-menu">
+                        {START_BASE_URL_OPTIONS.map((option) => (
+                          <button
+                            key={option.id}
+                            className="start-combobox-option"
+                            type="button"
+                            onClick={() => {
+                              setStartBaseUrl(option.value);
+                              setIsBaseUrlMenuOpen(false);
+                            }}
+                          >
+                            <span>{option.label}</span>
+                            <span>{option.value}</span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
                   </label>
                   <label className="start-field">
                     <span>API Key</span>

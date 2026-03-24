@@ -15,6 +15,7 @@ interface TreeViewProps {
   onRenameNode: (nodeId: string, title: string) => void;
   onSelectSession: (sessionId: string) => void;
   onSelectNode: (nodeId: string) => void;
+  onDeleteBranch: (sessionId: string) => void;
 }
 
 const TREE_LABEL_MAX = 45;
@@ -124,6 +125,7 @@ function SessionChain({
   selectedNodeId,
   onSelectSession,
   onSelectNode,
+  onDeleteBranch,
   onRenameNode,
   branchSessionsBySource,
   palette,
@@ -135,6 +137,7 @@ function SessionChain({
   selectedNodeId: string | null;
   onSelectSession: (sessionId: string) => void;
   onSelectNode: (nodeId: string) => void;
+  onDeleteBranch: (sessionId: string) => void;
   onRenameNode: (nodeId: string, title: string) => void;
   branchSessionsBySource: Map<string, Session[]>;
   palette: string[];
@@ -159,6 +162,10 @@ function SessionChain({
         <div
           className={`tree-branch-label ${isActiveSession ? "active" : ""}`}
           style={{ paddingLeft: depth * 14 }}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            onDeleteBranch(session.id);
+          }}
         >
           <span className="tree-band" style={{ background: sessionColor }} />
           <span className="tree-connector" style={{ background: sessionColor }} />
@@ -229,6 +236,7 @@ function SessionChain({
               selectedNodeId={selectedNodeId}
               onSelectSession={onSelectSession}
               onSelectNode={onSelectNode}
+              onDeleteBranch={onDeleteBranch}
               onRenameNode={onRenameNode}
               branchSessionsBySource={branchSessionsBySource}
               palette={palette}
@@ -254,6 +262,7 @@ export default function TreeView({
   onRenameNode,
   onSelectSession,
   onSelectNode,
+  onDeleteBranch,
 }: TreeViewProps) {
   const [editingTreeId, setEditingTreeId] = useState<string | null>(null);
   const [draftTitle, setDraftTitle] = useState("");
@@ -360,6 +369,7 @@ export default function TreeView({
                 selectedNodeId={selectedNodeId}
                 onSelectSession={onSelectSession}
                 onSelectNode={onSelectNode}
+                onDeleteBranch={onDeleteBranch}
                 onRenameNode={onRenameNode}
                 branchSessionsBySource={branchSessionsBySource}
                 palette={palette}

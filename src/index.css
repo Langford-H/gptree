@@ -51,7 +51,7 @@ button {
 }
 
 .sidebar h1 {
-  font-size: 18px;
+  font-size: 22px;
   margin: 0;
 }
 
@@ -71,7 +71,7 @@ button {
   color: #1d4ed8;
   padding: 10px 14px;
   border-radius: 999px;
-  font-size: 13px;
+  font-size: 17px;
   font-weight: 600;
   box-shadow: 0 8px 18px rgba(15, 23, 42, 0.16);
 }
@@ -97,7 +97,7 @@ button {
   border: none;
   background: transparent;
   color: inherit;
-  font-size: 15px;
+  font-size: 17px;
   line-height: 1;
   padding: 0;
 }
@@ -106,7 +106,7 @@ button {
   background: transparent;
   border: none;
   color: inherit;
-  font-size: 15px;
+  font-size: 17px;
   text-align: left;
   flex: 1;
   padding: 0;
@@ -144,7 +144,7 @@ button {
   gap: 6px;
   padding: 4px 6px;
   border-radius: 6px;
-  font-size: 15px;
+  font-size: 17px;
 }
 
 .tree-item.selected {
@@ -190,7 +190,7 @@ button {
   background: transparent;
   border: none;
   color: inherit;
-  font-size: 15px;
+  font-size: 17px;
   text-align: left;
   flex: 1;
   padding: 0;
@@ -218,7 +218,7 @@ button {
   border-radius: 6px;
   background: #2f3640;
   color: #f5f6fa;
-  font-size: 11px;
+  font-size: 12px;
   margin-right: 6px;
   flex-shrink: 0;
 }
@@ -324,8 +324,17 @@ button {
 
 .start-actions .button-primary {
   padding: 16px 34px;
-  font-size: 18px;
+  font-size: 20px;
   border-radius: 999px;
+}
+
+.start-actions .start-primary-button-anyway {
+  background: #98a2b3;
+  color: #ffffff;
+}
+
+.start-actions .start-primary-button-anyway:hover {
+  background: #7f8a9d;
 }
 
 .start-setup {
@@ -381,9 +390,11 @@ button {
 
 .start-form {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   margin-top: 16px;
+  width: 100%;
+  align-items: start;
 }
 
 .start-field {
@@ -393,10 +404,12 @@ button {
   font-size: 13px;
   font-weight: 600;
   color: #344054;
+  position: relative;
 }
 
 .start-field input {
   width: 100%;
+  min-width: 0;
   padding: 10px 12px;
   border-radius: 10px;
   border: 1px solid #c8ccd4;
@@ -404,9 +417,73 @@ button {
   font-weight: 400;
 }
 
+.start-field-combobox {
+  z-index: 2;
+}
+
+.start-combobox-shell {
+  position: relative;
+}
+
+.start-combobox-shell input {
+  padding-right: 42px;
+}
+
+.start-combobox-toggle {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  transform: translateY(-50%);
+  border: none;
+  background: transparent;
+  color: #667085;
+  font-size: 14px;
+  line-height: 1;
+  padding: 4px;
+}
+
+.start-combobox-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid #d0d5dd;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 18px 40px rgba(16, 24, 40, 0.14);
+}
+
+.start-combobox-option {
+  width: 100%;
+  border: none;
+  background: #ffffff;
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  text-align: left;
+  font-size: 16px;
+}
+
+.start-combobox-option:hover {
+  background: #f5f8ff;
+}
+
+.start-combobox-option span:last-child {
+  font-size: 14px;
+  font-weight: 400;
+  color: #667085;
+}
+
 .start-status {
   margin-top: 14px;
-  font-size: 13px;
+  font-size: 15px;
   color: #b42318;
   line-height: 1.5;
 }
@@ -433,11 +510,11 @@ button {
 
 .pane-title {
   margin: 0;
-  font-size: 20px;
+  font-size: 24px;
 }
 
 .breadcrumb {
-  font-size: 13px;
+  font-size: 15px;
   color: #555;
   display: flex;
   align-items: center;
@@ -451,7 +528,7 @@ button {
   padding: 2px 6px;
   border-radius: 6px;
   background: #e9ecef;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   color: #1f1f1f;
 }
@@ -459,18 +536,22 @@ button {
 .branch-banner {
   border-left: 3px solid #0d6efd;
   background: #f5f8ff;
-  padding: 10px;
+  padding: 5px 8px;
   border-radius: 8px;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .branch-title {
   font-weight: 600;
-  margin-bottom: 6px;
+  margin-bottom: 2px;
+  font-size: 15px;
 }
 
 .branch-quote {
-  white-space: pre-wrap;
+  white-space: normal;
+  line-height: 1.12;
+  overflow-wrap: anywhere;
+  font-size: 15px;
 }
 
 .context-preview {
@@ -483,7 +564,7 @@ button {
   cursor: pointer;
   list-style: none;
   padding: 10px 12px;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 600;
   color: #344054;
 }
@@ -505,7 +586,7 @@ button {
 }
 
 .context-preview-label {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 600;
   color: #475467;
 }
@@ -518,15 +599,15 @@ button {
   color: #101828;
   white-space: pre-wrap;
   word-break: break-word;
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.45;
 }
 
 .chat-transcript {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 16px 10px 8px;
+  gap: 0;
+  padding: 4px 6px 1px;
   position: relative;
   flex: 1;
   min-height: 0;
@@ -543,36 +624,29 @@ button {
   color: #fff;
   padding: 8px 12px;
   border-radius: 999px;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 600;
   box-shadow: 0 8px 18px rgba(16, 24, 40, 0.2);
 }
 
 .empty-transcript {
-  font-size: 13px;
+  font-size: 15px;
   color: #555;
 }
 
 .message-group {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  margin-bottom: 18px;
-}
-
-.message-group.selected .message-user,
-.message-group.selected .message-assistant {
-  outline: 2px solid #5b9bff;
+  gap: 0;
+  margin-bottom: 0;
 }
 
 .message {
-  padding: 4px 10px;
-  border-radius: 12px;
-  font-size: 17px;
+  font-size: 21px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   word-break: break-word;
-  line-height: 1.4;
+  line-height: 0.74;
 }
 
 .message-content > *:first-child,
@@ -590,18 +664,90 @@ button {
   margin: 0;
 }
 
+.message-content h1,
+.message-content h2,
+.message-content h3,
+.message-content h4,
+.message-content h5,
+.message-content h6,
+.message-user h1,
+.message-user h2,
+.message-user h3,
+.message-user h4,
+.message-user h5,
+.message-user h6 {
+  margin: 0;
+  line-height: 0.72;
+}
+
+.message-content > h1 + p,
+.message-content > h2 + p,
+.message-content > h3 + p,
+.message-content > h4 + p,
+.message-content > h5 + p,
+.message-content > h6 + p,
+.message-user > h1 + p,
+.message-user > h2 + p,
+.message-user > h3 + p,
+.message-user > h4 + p,
+.message-user > h5 + p,
+.message-user > h6 + p {
+  margin-top: 0;
+}
+
+.message-content > p + p,
+.message-user > p + p,
+.message-content > ul + p,
+.message-content > ol + p,
+.message-user > ul + p,
+.message-user > ol + p {
+  margin-top: 0;
+}
+
+.message-content > p + ul,
+.message-content > p + ol,
+.message-user > p + ul,
+.message-user > p + ol,
+.message-content > h1 + ul,
+.message-content > h2 + ul,
+.message-content > h3 + ul,
+.message-content > h4 + ul,
+.message-content > h5 + ul,
+.message-content > h6 + ul,
+.message-user > h1 + ul,
+.message-user > h2 + ul,
+.message-user > h3 + ul,
+.message-user > h4 + ul,
+.message-user > h5 + ul,
+.message-user > h6 + ul,
+.message-content > h1 + ol,
+.message-content > h2 + ol,
+.message-content > h3 + ol,
+.message-content > h4 + ol,
+.message-content > h5 + ol,
+.message-content > h6 + ol,
+.message-user > h1 + ol,
+.message-user > h2 + ol,
+.message-user > h3 + ol,
+.message-user > h4 + ol,
+.message-user > h5 + ol,
+.message-user > h6 + ol {
+  margin-top: 0;
+}
+
 .message-content pre,
 .message-user pre {
   background: #0f172a;
   color: #e2e8f0;
-  padding: 10px;
+  padding: 4px;
   border-radius: 8px;
   overflow-x: auto;
-  margin: 2px 0;
+  margin: 0;
 }
 
 .message-content .katex-display {
-  margin: 2px 0;
+  margin: 0;
+  padding: 0;
 }
 
 .message-content code,
@@ -621,14 +767,24 @@ button {
 .message-user ul,
 .message-user ol {
   padding-left: 20px;
-  margin: 2px 0;
+  margin: 0;
+  line-height: 0.72;
+}
+
+.message-content li,
+.message-user li {
+  margin: 0;
+  padding: 0;
+  line-height: 0.72;
 }
 
 .message-user {
   align-self: flex-end;
   background: #e7f0ff;
+  padding: 2px 6px;
+  border-radius: 12px;
   max-width: 50%;
-  margin-top: 8px;
+  margin-top: 0;
 }
 
 .message-assistant {
@@ -636,17 +792,47 @@ button {
   width: 100%;
   max-width: 100%;
   background: transparent;
-  padding: 10px 4px 10px 0;
-  margin-right: 72px;
+  padding: 0;
+  margin-top: 1px;
+  margin-right: 0;
+  border-radius: 0;
+}
+
+.message-thinking {
+  margin-bottom: 8px;
+  border-radius: 8px;
+  background: #f5f7fa;
+  border: 1px solid #e4e7ec;
+}
+
+.message-thinking summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 0 2px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #475467;
+  line-height: 0.72;
+}
+
+.message-thinking summary::-webkit-details-marker {
+  display: none;
+}
+
+.message-thinking .message-content {
+  padding: 0 2px 0;
+  font-size: 16px;
+  color: #475467;
+  line-height: 0.74;
 }
 
 .composer {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 1px;
   width: 100%;
-  margin-top: 32px;
-  padding-top: 40px;
+  margin-top: 0;
+  padding-top: 0;
   border-top: 1px solid #eef2f6;
 }
 
@@ -679,8 +865,8 @@ button {
   position: absolute;
   right: 10px;
   bottom: 10px;
-  width: 44px;
-  height: 44px;
+  width: 48px;
+  height: 48px;
   border-radius: 50%;
   padding: 0;
   display: inline-flex;
@@ -688,7 +874,7 @@ button {
   justify-content: center;
   font-weight: 800;
   line-height: 1;
-  font-size: 24px;
+  font-size: 34px;
 }
 
 .button-primary.composer-send {
@@ -699,23 +885,23 @@ button {
 .composer-send-icon {
   display: inline-block;
   position: relative;
-  top: -2px;
+  top: -3px;
   line-height: 1;
 }
 
 .selection-error {
   color: #b42318;
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .selection-hint {
   color: #1d4ed8;
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .error-banner {
   color: #b42318;
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .settings-modal {
@@ -843,6 +1029,7 @@ button {
   border: none;
   padding: 8px 12px;
   border-radius: 6px;
+  font-size: 16px;
 }
 
 .button-primary:disabled {
@@ -856,6 +1043,7 @@ button {
   border: none;
   padding: 8px 12px;
   border-radius: 6px;
+  font-size: 16px;
 }
 
 .button-danger {
@@ -864,6 +1052,7 @@ button {
   border: none;
   padding: 8px 12px;
   border-radius: 6px;
+  font-size: 16px;
 }
 
 .export-box {
